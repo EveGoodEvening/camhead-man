@@ -1,0 +1,45 @@
+第三方声明 / Third-party notices
+
+本文件包含本游戏所使用的第三方组件许可信息及系统字体使用说明。
+下列第三方许可证仅适用于对应组件，不代表本游戏原创代码或内容的许可证。
+
+1. 系统字体 / System fonts
+
+本项目不包含或分发字体文件。界面及运行时生成的文字纹理使用用户设备上
+可用的系统字体；实际使用的字体取决于设备环境。各字体的权利归其相应
+权利人所有。项目截图是渲染后的图像，不包含字体文件。
+
+代码中的字体名称仅用于选择本机可用字体，不授予字体文件复制、嵌入或
+再分发的许可。若后续将字体文件随游戏打包，应另行核对相应字体版本的
+许可证并保留所需声明。
+
+2. Three.js
+
+Package: three
+Version: 0.186.1
+Source: https://github.com/mrdoob/three.js
+License: MIT
+
+以下为该版本随附的完整许可证原文：
+
+The MIT License
+
+Copyright © 2010-2026 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

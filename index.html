@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark" />
+<title>天亮了，叫我</title>
+<!-- M1d：内联空图标，免得真 Chrome 请求 /favicon.ico 得到 404（console.error，违反 ARCH §14.1 #4） -->
+<link rel="icon" href="data:," />
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* #app：canvas 在最底层，UI 各层叠在上面（ARCH §7）；不让拖拽转视角时选中文字、不让触控板手势滚动页面 */
+  #app { position: fixed; inset: 0; background: #000; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

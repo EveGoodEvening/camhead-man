@@ -3,9 +3,8 @@
 // 一个合并的低模人形（腿、躯干、胳膊、头）× 实例；排成 cols 列、前排在 z=0、往后每排 +spacing，后排略高（合影站台阶）；
 // 人群面朝 -z，原点在第一排中间的地面。kidsFrontRow：第一排是这么多个小孩（缩小到 0.62）。
 //
-// M4 第 2 轮：回放人群改成圆一点的人形（圆筒躯干、腿、胳膊、头发帽、鞋），UV 指向一张 5 格的调色板（肤色、头发、上衣、裤子、鞋），
-// 回放材质按调色板的亮度与色相调制（与人偶的回放部件同一个着色器程序，只是 uniform 不同）；三套衣服配色分三个 InstancedMesh
-// （第一套是返回的 mesh，另两套挂在它下面）——原来是一个颜色的方块人，2–3m 外读成一摞摞圆盘，看不出是人。
+// 人群沿用三套配色、三个 InstancedMesh；脸、衣襟和布料绘进同一图集，近景不再是无脸圆球。
+// 轮廓有圆肩、手掌、裤腿和鞋楦，几何仍是一份缓存，人数增加不增加 draw call。
 
 import * as THREE from 'three';
 import { DEG2RAD } from '../core/math';
@@ -14,6 +13,8 @@ import { createReplayMaterial } from '../fx/ghostMaterials';
 import { TEMP_C } from '../data/render';
 import { canvasToTexture, createCanvas } from '../kit/canvas';
 import { rng, range } from '../kit/rng';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { faceTexture, squircleLoft } from './humanoid';
 
 export interface CrowdOpts { count: number; cols: number; spacing: number; look: 'replay' | 'ghost' | 'silhouette'; seed?: number; kidsFrontRow?: number }
 
@@ -31,17 +32,31 @@ const OUTFITS: readonly (readonly [string, string, string])[] = [
 ];
 
 function paletteTexture(hair: string, shirt: string, pants: string): THREE.CanvasTexture {
-  const { canvas, g } = createCanvas(PAL_N, 1);
+  const { canvas, g } = createCanvas(256, 256);
+  g.scale(0.5, 0.5);
+  const face = faceTexture({ skin: '#C9A080', hair, hairStyle: 'short', age: hair === '#8a8680' ? 'old' : 'young' });
+  g.drawImage(face.image, 0, 0, 512, 256);
+  g.fillStyle = shirt;
+  g.fillRect(0, 256, 512, 160);
+  g.fillStyle = 'rgba(0,0,0,0.14)';
+  g.fillRect(126, 263, 4, 153);
+  g.strokeStyle = 'rgba(0,0,0,0.18)';
+  g.lineWidth = 1;
+  g.strokeRect(56, 290, 34, 30);
+  g.strokeRect(166, 290, 34, 30);
+  g.fillStyle = 'rgba(235,229,210,0.6)';
+  for (let y = 279; y < 409; y += 28) {
+    g.beginPath();
+    g.arc(128, y, 1.5, 0, Math.PI * 2);
+    g.fill();
+  }
   const cols = ['#C9A080', hair, shirt, pants, '#1d1a18'];
   cols.forEach((c, i) => {
     g.fillStyle = c;
-    g.fillRect(i, 0, 1, 1);
+    g.fillRect(i * 512 / PAL_N, 416, Math.ceil(512 / PAL_N), 96);
   });
   const tex = canvasToTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.name = 'crowd.palette';
+  tex.name = 'crowd.atlas';
   return tex;
 }
 
@@ -49,48 +64,69 @@ function paletteTexture(hair: string, shirt: string, pants: string): THREE.Canva
 function person(): THREE.BufferGeometry {
   if (personGeo) return personGeo;
   const parts: THREE.BufferGeometry[] = [];
-  const add = (g: THREE.BufferGeometry, pal: number, x: number, y: number, z: number, rz = 0) => {
+  const add = (g: THREE.BufferGeometry, pal: number, x: number, y: number, z: number, rz = 0, detail?: 'face' | 'shirt') => {
     if (rz) g.rotateZ(rz);
     g.translate(x, y, z);
     const c = g.index ? g.toNonIndexed() : g;
     if (c !== g) g.dispose();
-    const uv = new Float32Array((c.attributes.position?.count ?? 0) * 2);
-    for (let i = 0; i < uv.length; i += 2) {
-      uv[i] = (pal + 0.5) / PAL_N;
-      uv[i + 1] = 0.5;
+    const uv = c.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) {
+      if (detail === 'face') uv.setY(i, 0.5 + uv.getY(i) * 0.5);
+      else if (detail === 'shirt') uv.setY(i, 0.1875 + uv.getY(i) * 0.3125);
+      else uv.setXY(i, (pal + 0.5) / PAL_N, 0.09);
     }
-    c.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     parts.push(c);
   };
-  // 腿（裤子，上端藏进裤腰，不封口）与鞋
   for (const sx of [-1, 1]) {
-    add(new THREE.CylinderGeometry(0.068, 0.056, 0.8, 8, 1, true), PAL.pants, sx * 0.085, 0.46, 0);
-    const shoe = new THREE.BoxGeometry(0.1, 0.07, 0.24);
-    add(shoe, PAL.shoes, sx * 0.085, 0.035, -0.04);
+    const leg = new THREE.LatheGeometry([
+      new THREE.Vector2(0.048, 0.07), new THREE.Vector2(0.052, 0.22), new THREE.Vector2(0.067, 0.36),
+      new THREE.Vector2(0.062, 0.5), new THREE.Vector2(0.08, 0.73), new THREE.Vector2(0.087, 0.9),
+    ], 12);
+    leg.scale(1, 1, 0.92);
+    add(leg, PAL.pants, sx * 0.09, 0, 0);
+    add(new RoundedBoxGeometry(0.105, 0.075, 0.25, 1, 0.016), PAL.shoes, sx * 0.09, 0.038, -0.052);
   }
-  // 躯干（上衣）：Lathe 圆肩（轮廓自下而上，§16 #39），不再是顶上一块平盖——平盖在回放材质下是一圈亮椭圆，一排人像一摞硬币
-  const prof = [[0.158, 0], [0.172, 0.18], [0.186, 0.4], [0.19, 0.5], [0.176, 0.57], [0.13, 0.625], [0.06, 0.655], [0.001, 0.662]] as const;
-  const torso = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 12);
-  torso.scale(1, 1, 0.62);
-  add(torso, PAL.shirt, 0, 0.84, 0);
-  // 裤腰（不封口）
-  const hip = new THREE.CylinderGeometry(0.16, 0.15, 0.14, 12, 1, true);
-  hip.scale(1, 1, 0.66);
-  add(hip, PAL.pants, 0, 0.83, 0);
-  // 胳膊（袖子，圆头）与手
+  const torso = squircleLoft([
+    { y: 0, a: 0.16, b: 0.105 }, { y: 0.1, a: 0.167, b: 0.11 },
+    { y: 0.28, a: 0.185, b: 0.12, front: 0.08 }, { y: 0.38, a: 0.193, b: 0.117, drop: 0.016 },
+    { y: 0.43, a: 0.15, b: 0.09, drop: 0.028 },
+  ], 20, { capTop: { y: 0.452, a: 0.061, b: 0.055 } });
+  add(torso, PAL.shirt, 0, 1.035, 0, 0, 'shirt');
+  const hip = new THREE.CylinderGeometry(0.16, 0.15, 0.2, 16, 1, true);
+  hip.scale(1, 1, 0.67);
+  add(hip, PAL.pants, 0, 0.95, 0);
   for (const sx of [-1, 1]) {
-    add(new THREE.CapsuleGeometry(0.048, 0.48, 3, 7), PAL.shirt, sx * 0.225, 1.16, 0, sx * 0.08);
-    add(new THREE.SphereGeometry(0.042, 6, 4), PAL.skin, sx * 0.248, 0.86, 0);
+    const sleeve = new THREE.LatheGeometry([
+      new THREE.Vector2(0.032, -0.55), new THREE.Vector2(0.042, -0.4), new THREE.Vector2(0.049, -0.29),
+      new THREE.Vector2(0.059, -0.15), new THREE.Vector2(0.067, -0.025), new THREE.Vector2(0.047, 0.028), new THREE.Vector2(0, 0.055),
+    ], 12);
+    sleeve.scale(1, 1, 0.9);
+    add(sleeve, PAL.shirt, sx * 0.19, 1.42, 0, sx * 0.06);
+    const hand = new THREE.CapsuleGeometry(0.025, 0.065, 3, 10);
+    hand.scale(0.6, 1, 1);
+    add(hand, PAL.skin, sx * 0.226, 0.835, -0.004);
   }
-  // 脖子、头、头发帽（盖住头顶与后脑，前额留出脸）
-  add(new THREE.CylinderGeometry(0.045, 0.05, 0.08, 8), PAL.skin, 0, 1.51, 0);
-  const head = new THREE.SphereGeometry(0.105, 12, 8);
-  head.scale(0.92, 1.1, 1);
-  add(head, PAL.skin, 0, 1.63, 0);
-  const hair = new THREE.SphereGeometry(0.112, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  add(new THREE.CylinderGeometry(0.044, 0.058, 0.085, 12), PAL.skin, 0, 1.51, 0);
+  const head = new THREE.SphereGeometry(0.105, 24, 16);
+  head.scale(0.9, 1.1, 1);
+  const hp = head.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < hp.count; i++) {
+    if (hp.getY(i) < 0) hp.setX(i, hp.getX(i) * (1 + hp.getY(i) * 0.8));
+  }
+  head.computeVertexNormals();
+  add(head, PAL.skin, 0, 1.63, 0, 0, 'face');
+  const nose = new THREE.SphereGeometry(1, 8, 6);
+  nose.scale(0.012, 0.024, 0.015);
+  add(nose, PAL.skin, 0, 1.611, -0.101);
+  for (const sx of [-1, 1]) {
+    const ear = new THREE.SphereGeometry(1, 8, 6);
+    ear.scale(0.009, 0.021, 0.013);
+    add(ear, PAL.skin, sx * 0.094, 1.623, 0.008);
+  }
+  const hair = new THREE.SphereGeometry(0.108, 24, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
   hair.scale(0.93, 1.08, 1.02);
   hair.rotateX(0.35);
-  add(hair, PAL.hair, 0, 1.645, 0.012);
+  add(hair, PAL.hair, 0, 1.632, 0.004);
   // 合并成一份：position/normal/uv
   let n = 0;
   for (const p of parts) n += p.attributes.position?.count ?? 0;
@@ -126,7 +162,7 @@ export function createCrowd(o: CrowdOpts): { mesh: THREE.InstancedMesh; bounds: 
       const map = paletteTexture(hair, shirt, pants);
       textures.push(map);
       // 与人偶的回放部件同一套细节参数（rigs/humanoid.ts modeMatFor）：贴图亮度 0.85、原色 0.45、不透明度 0.75
-      const m = createReplayMaterial({ map, mapAmt: 0.85, base: 0xffffff, baseAmt: 0.45, opacity: 0.75 });
+      const m = createReplayMaterial({ map, mapAmt: 0.85, base: 0xffffff, baseAmt: 0.45, opacity: 0.75, solid: 0.22, rim: 0.22, albedo: 1 });
       m.userData.tempC = TEMP_C.ambient;
       owned.push(m);
       mats.push(m);

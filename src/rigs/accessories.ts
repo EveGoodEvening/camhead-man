@@ -604,19 +604,19 @@ function faceSnow(s: number, headCenter: THREE.Object3D): THREE.Mesh {
 function glasses(s: number): THREE.Group {
   const g = new THREE.Group();
   g.name = 'glasses';
-  const frame = kitMat('glasses.frame', { color: '#2a1d14', roughness: 0.4, metalness: 0.3 });
-  const lensMat = kitMat('glasses.lens', { color: '#9fb4c0', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.35 });
+  const frame = kitMat('glasses.frame', { color: '#4a3c2f', roughness: 0.58, metalness: 0.45 });
+  const lensMat = kitMat('glasses.lens', { color: '#b8c6c9', roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.12 });
   for (const sx of [-1, 1]) {
-    const rim = mesh(new THREE.TorusGeometry(0.02 * s, 0.003 * s, 4, 14), frame, 'rim');
+    const rim = mesh(new THREE.TorusGeometry(0.021 * s, 0.0012 * s, 6, 32).scale(1.12, 0.82, 1), frame, 'rim');
     rim.position.set(sx * 0.03 * s, 0, 0);
-    const lens = mesh(new THREE.CircleGeometry(0.02 * s, 12), lensMat, 'lens');
+    const lens = mesh(new THREE.CircleGeometry(0.02 * s, 24).scale(1.12, 0.82, 1), lensMat, 'lens');
     lens.rotation.y = Math.PI;
     lens.position.set(sx * 0.03 * s, 0, 0.001);
-    const arm = mesh(new THREE.BoxGeometry(0.003 * s, 0.003 * s, 0.1 * s).translate(0, 0, 0.05 * s), frame, 'arm');
-    arm.position.set(sx * 0.05 * s, 0, 0);
+    const arm = mesh(new THREE.BoxGeometry(0.0018 * s, 0.0018 * s, 0.1 * s).translate(0, 0, 0.05 * s), frame, 'arm');
+    arm.position.set(sx * 0.053 * s, 0, 0);
     g.add(rim, lens, arm);
   }
-  const bridge = mesh(new THREE.BoxGeometry(0.02 * s, 0.003 * s, 0.003 * s), frame, 'bridge');
+  const bridge = mesh(new THREE.TorusGeometry(0.008 * s, 0.0012 * s, 6, 12, Math.PI).rotateZ(Math.PI), frame, 'bridge');
   g.add(bridge);
   // M4 第 2 轮：往前挪到脸面上（原来一半埋在头球里）
   g.position.set(0, 0.145 * s, -0.106 * s);
@@ -625,26 +625,41 @@ function glasses(s: number): THREE.Group {
 }
 
 function beard(s: number): THREE.Object3D {
-  const r = rng(1200);
-  const pos: number[] = [];
-  for (let i = 0; i < 60; i++) {
-    const a = range(r, -1, 1);
-    const x0 = a * 0.045 * s, z0 = -0.085 * s - (1 - Math.abs(a)) * 0.012 * s, y0 = range(r, 0.07, 0.1) * s;
-    const len = range(r, 0.12, 0.2) * s * (1 - Math.abs(a) * 0.4);
-    const x1 = x0 * 0.6 + range(r, -0.01, 0.01) * s, z1 = z0 - range(r, 0.0, 0.02) * s, y1 = y0 - len;
-    pos.push(x0, y0, z0, x1, y1, z1);
+  const map = cachedTex('acc.beard', () => paintTexture(128, 256, (g, w, h) => {
+    const base = g.createLinearGradient(0, 0, 0, h);
+    base.addColorStop(0, '#D3CEC1');
+    base.addColorStop(1, '#F0ECE2');
+    g.fillStyle = base;
+    g.fillRect(0, 0, w, h);
+    const r = rng(1200);
+    g.lineWidth = 0.8;
+    for (let i = 0; i < 150; i++) {
+      const x = r() * w, y = r() * h;
+      g.strokeStyle = r() < 0.5 ? 'rgba(85,78,66,0.22)' : 'rgba(255,254,245,0.55)';
+      g.beginPath();
+      g.moveTo(x, y);
+      g.quadraticCurveTo(x + 3, y + 20, x - 1, y + 45);
+      g.stroke();
+    }
+  }));
+  const profile = [[0.002, -0.12], [0.012, -0.105], [0.028, -0.055], [0.04, 0], [0.046, 0.042], [0.035, 0.071], [0.005, 0.078]] as const;
+  const curve = new THREE.SplineCurve(profile.map(([r, y]) => new THREE.Vector2(r * s, y * s)));
+  const main = new THREE.LatheGeometry(curve.getPoints(20), 24);
+  main.scale(1, 1, 0.34);
+  main.translate(0, 0, -0.105 * s);
+  const parts = [main.toNonIndexed()];
+  main.dispose();
+  for (const sx of [-1, 1]) {
+    const moustache = new THREE.SphereGeometry(1, 12, 8);
+    moustache.scale(0.031 * s, 0.008 * s, 0.009 * s);
+    moustache.rotateZ(sx * 0.28);
+    moustache.translate(sx * 0.024 * s, 0.092 * s, -0.108 * s);
+    parts.push(moustache.toNonIndexed());
+    moustache.dispose();
   }
-  // 两撇八字胡
-  for (let i = 0; i < 16; i++) {
-    const sx = i % 2 ? 1 : -1;
-    const y = range(r, 0.105, 0.112) * s;
-    pos.push(sx * 0.005 * s, y, -0.1 * s, sx * range(r, 0.04, 0.06) * s, y - range(r, 0.02, 0.04) * s, -0.09 * s);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#F4F1EA', transparent: true, opacity: 0.9 }));
-  l.name = 'beard';
-  return l;
+  const geo = mergeGeometries(parts, false)!;
+  for (const p of parts) p.dispose();
+  return mesh(geo, kitMat('beard', { color: 0xffffff, map, roughness: 1, tempC: TEMP_C.alive }), 'beard');
 }
 
 function armband(s: number): THREE.Mesh {
@@ -740,12 +755,12 @@ export function zhongshanDetails(h: HumanoidInternal, color: string): THREE.Grou
   const top = 0.452 * s;
   // 立领：领座（直筒）+ 领面（往外翻、略外撇），前面正中留一道口（圆柱 θ = π 是正前方 -z）
   const gap = 0.32;
-  const stand = new THREE.CylinderGeometry(0.078 * s, 0.08 * s, 0.042 * s, 22, 1, true, Math.PI + gap / 2, Math.PI * 2 - gap);
+  const stand = new THREE.CylinderGeometry(0.065 * s, 0.073 * s, 0.026 * s, 32, 1, true, Math.PI + gap / 2, Math.PI * 2 - gap);
   stand.scale(1, 1, 0.9);
-  stand.translate(0, top + 0.016 * s, 0);
-  const fold = new THREE.CylinderGeometry(0.084 * s, 0.102 * s, 0.034 * s, 22, 1, true, Math.PI + gap, Math.PI * 2 - gap * 2);
+  stand.translate(0, top + 0.009 * s, 0);
+  const fold = new THREE.CylinderGeometry(0.068 * s, 0.08 * s, 0.022 * s, 32, 1, true, Math.PI + gap, Math.PI * 2 - gap * 2);
   fold.scale(1, 1, 0.92);
-  fold.translate(0, top + 0.002 * s, 0);
+  fold.translate(0, top + 0.003 * s, 0);
   parts.push(stand.toNonIndexed(), fold.toNonIndexed());
   stand.dispose();
   fold.dispose();
@@ -759,15 +774,15 @@ export function zhongshanDetails(h: HumanoidInternal, color: string): THREE.Grou
   };
   // 口袋盖：上兜（胸前，贴图 u 0.12 / 0.38，上沿 y ≈ 0.374s）与下兜（衣襟下摆，u 0.11 / 0.39，上沿 y ≈ 0.172s）；盖子下沿略翘
   for (const [u, y, w] of [[0.12, 0.36, 0.08], [0.38, 0.36, 0.08], [0.11, 0.158, 0.1], [0.39, 0.158, 0.1]] as const) {
-    const flap = new THREE.BoxGeometry(w * s, 0.03 * s, 0.006 * s);
-    parts.push(place(flap, u, y * s, 0.004 * s).toNonIndexed());
+    const flap = new THREE.BoxGeometry(w * s, 0.025 * s, 0.002 * s);
+    parts.push(place(flap, u, y * s, 0.0018 * s).toNonIndexed());
     flap.dispose();
   }
   const clothGeo = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   const btnParts: THREE.BufferGeometry[] = [];
   for (const y of [0.396, 0.342, 0.256, 0.154, 0.058]) {
-    const b = new THREE.CylinderGeometry(0.0085 * s, 0.0085 * s, 0.006 * s, 8);
+    const b = new THREE.CylinderGeometry(0.006 * s, 0.006 * s, 0.0025 * s, 16);
     b.rotateX(Math.PI / 2);
     btnParts.push(place(b, 0.25, y * s, 0.003 * s).toNonIndexed());
     b.dispose();

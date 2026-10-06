@@ -1107,9 +1107,9 @@ export function createHumanoid(spec: HumanoidSpec): HumanoidRig;
 
 - **行走循环**（`update`；M1c 按 WP2 的实现更正，engine-wp2.md #6）：`phase += speed / stride * dt * π`（`stride = 0.75 * height/1.75`，每走一个 stride 是半个左右脚周期，单步 ≈ 0.76m，与髋 ±0.45rad、腿长 0.87m 一致；原写 2π 会让 2.2m/s 时每秒近 6 步）；髋 `±0.45·sin(phase)` rad；膝在**摆动相**屈：左 `max(0, cos(phase + 0.53))·0.9 + 0.08`、右相位差 π；肩与髋反相 `∓0.35`，肘恒屈 0.25；脊柱/骨盆绕 y 小幅反向扭转；身体起伏 `-|sin(phase)|·0.03`（双脚分开时最低）。停步时 0.2s 内收回。
 - **姿势表**（`poses.ts`）：`stand`/`walk`/`sit`（大腿水平前伸、小腿垂直，身体下移 0.45×高度比）/`crouch`/`raise_arm`（右臂上举约 150°）/`carry`（双臂前伸 60°）/`lie`（整体绕 x 轴 90°，担架用；老周趴桌用 `sit` + 角色变体 `zhou:'slump'`）/`look_up`（抬头约 35°）。**角度符号**（M1c 写明）：人偶面朝 -z，按 three 右手系，下垂的肢体往前（-z）摆是绕 X **为正**（髋前屈、肩前举、肘屈为正，膝屈为负；躯干绕 X 为负 = 弯腰；颈绕 X 为正 = 抬头），所以 `poses.ts` 里的数与“前屈为负”的口语描述符号相反（文件头写明）。回放人影只在关键帧之间做姿势混合（GDD §3.6）。
-- 身体与四肢用 `BoxGeometry`/`CylinderGeometry`/`CapsuleGeometry`（注意 r186 的 `CapsuleGeometry(radius, height, …)` 中 `height` 是**中段长度**）。
-- 共享几何：同一 `HumanoidSpec` 的部件几何按尺寸缓存复用。
-- **draw call 成本（M1d 实测，给区域做预算）**：人身不合并网格，每个角色 = 部件数个 draw call——主角 37（头 12、身 22、线/插头/假阴影 3）、`character.zhou` 29、`character.wang` 23（魂影同材质也是分开的 draw）、一般 NPC 20–30。同屏 3–4 个角色时主场景已用掉约 200/250（look-dev `lookdev_tp` 实测 203），镜面与 CH2 会把画面里的角色再画一遍：人多的场景（鬼市、合影）优先用 `rigs/crowd.ts`/纸人、远处用剪影。按骨骼合并同材质部件留到 M4 性能调优。
+- **人物细化（2026-10-06）**：四肢用样条轮廓的 `LatheGeometry`（圆肩、前臂收口、裤腿粗细变化），掌骨、四指与拇指合并为一个网格；鞋用圆角鞋楦。躯干肩部跨 UV 接缝平滑法线。头部增加眼窝、颧骨、下颌、圆鼻梁与细眼睑，脸贴图 512×384；素色衣料增加 256² 缝线/褶皱图。土地胡须为单个带发丝贴图的体积网格，眼镜改细框。仍不用骨骼蒙皮；关节坐标、身高、拍照锚点、配件接口不变。
+- 共享几何：同一尺寸/外观的部件缓存复用。**袍摆例外**：每个人偶克隆自己的几何，在坐/站过渡时插值成盖住大腿、膝盖并垂下的连续衣片；只有弯曲权重变化时更新顶点/法线/包围盒，不缩扁整条裙摆，不影响同款站立人物。私有袍摆由人偶 `dispose()` 释放。
+- **draw call 成本（2026-10-06 更新）**：按关节保留网格，同一关节同材质的细节合并；头部五官、手指和胡须纹理不各自拆成 draw call。五张 look-dev 的主场景最高 203/250；实景群像 `shot.r1.old1_replay` 为 52 次主场景绘制、121236 个整帧三角面。镜面与 CH2 会重复绘制角色，人多的场景仍优先用 `rigs/crowd.ts`/纸人、远处用剪影；不要通过拆分细节网格提高精度。
 - `root.userData.fadeCapable = true`（M1d）：`setOpacity(< 1)` 会把非着色器材质切成 `transparent`（r186 的程序按 opaque 区分），`warmupArea` 据此把这些材质的透明变体也预热一遍（§8.5），P14 与 NPC `fadeTo` 的第一帧不现场编译。
 - `dispose()`（M3 补写，docs/requests/r4.md #5）：释放子树里 `Mesh`、`Line`、`Points` 的非缓存几何；线/点的材质不在人偶自己的 owned 列表里，非共享的也在这里释放（黄鼬头的胡须 `LineSegments` 原来每建一次漏一份）。
 
@@ -1226,6 +1226,7 @@ export function createCrowd(o: CrowdOpts): { mesh: THREE.InstancedMesh; bounds: 
 - `createPaperStalls` 的每个实例与同 `seed` 的 `createPaperFigure({kind:'vendor'})` **共用同一套几何与贴图生成函数**，外形逐像素一致（黄三爷伪装靠这一点）；脸的差异只来自贴图图集里按 seed 选的格子，不用 `instanceColor` 区分（红外替换材质会被 instanceColor 染色，见 §6.8.2）。
 - 纸人材质 `tempC = 6`；纸像发光材质见 §8.3 的 `paperGlow()`。
 - `createCrowd()`（M1c 写明）：面朝 -z，第一排在 z=0，往后每排 +0.85×spacing、抬高 0.15m。
+- **人物细化（2026-10-06）**：回放人群仍为三套衣色、三个 `InstancedMesh`；256² 图集分为脸、衣襟与调色区，头有耳鼻，躯干为圆肩放样，手和鞋有轮廓。每套实例共用同一份合并几何，不按人数增加 draw call；纸人与纸扎摊主外观不改。
 
 ---
 
@@ -2412,6 +2413,7 @@ export function isSharedMaterial(m: THREE.Material): boolean;   // M1a 补写：
 ```
 
 - 工厂函数返回**缓存的共享实例**（同参数同实例），区域不得 `dispose()` 它们；需要改色时用 `cloth(color)` 这类带参工厂（按参数缓存），不要 `.clone()` 后修改共享实例。
+- **人物魂影/回放细化（2026-10-06）**：内部 `GhostDetail` 增加 `rim?: number`、`albedo?: number`，缺省分别为 1、0，保持场景魂影/纸像原效果。人物取 `rim = 0.32`（魂影）/`0.22`（回放）、`albedo = 1`，衣料 `solid = 0.22`，脸与配件保留原实度。亮度采样必须包含 `uBase × uMap`，不能把灰度布纹当作白色衣服；减弱每段肢体独立发亮的塑料关节感。所有角色仍共享程序，变化只在 uniform；修改后检查五张 `shot.dev.lookdev_*`（含红外）及 NPC/群像实景。
 - 所有程序化贴图（砖缝、瓷砖缝、锈斑、湿地面）由 `kit/canvas.ts` 生成，`colorSpace = SRGBColorSpace`（颜色贴图）或保持 `NoColorSpace`（粗糙度/遮罩）。
 - 魂影、回放人影、纸像发光：`transparent:true`、`depthWrite:false`、`renderOrder` 分别 10/20/15，最后绘制（GDD §9.3）。自定义 ShaderMaterial 若需雾，必须合并 `UniformsLib.fog` 并包含 fog 相关 chunk。
 - 金属类（`metal`、`tin`、搪瓷、主角的镜头环与铁皮帽）`metalness` 0.4–0.7、`roughness` 0.35–0.6：它们的观感依赖下面的环境贴图，没有环境贴图时金属在点光下几乎全黑。

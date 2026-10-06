@@ -134,6 +134,7 @@ function buildTudi(o: CharacterOpts): Built {
   const s = h.s;
   const beard = ACCESSORIES.beard(s);
   h.joints.headSlot.add(beard);
+  h.adopt(beard);
   // 枣木拐杖立在右前方（挂在 root 上，拄着不动），右手握在杖身上
   const cane = ACCESSORIES.caneLantern(s * 1.32);
   cane.group.position.set(0.19, 0, -0.29);

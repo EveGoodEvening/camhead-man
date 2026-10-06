@@ -34,7 +34,7 @@ export interface HumanoidSpec {
   shirt: THREE.ColorRepresentation; pants: THREE.ColorRepresentation; shoes?: THREE.ColorRepresentation;
   skin?: THREE.ColorRepresentation;
   sleeves?: 'short' | 'long';
-  /** 长袍（土地）：腿部换成 Lathe 下摆 */
+  /** 连续长袍（土地、新娘）：下摆随坐姿覆盖大腿与膝盖，内侧仍有腿。 */
   robe?: boolean;
   /** 'none' = 留空 headSlot 由外部挂载 */
   head: 'none' | 'human' | 'camera' | 'weasel';
@@ -158,22 +158,32 @@ function sleeveGeo(rTop: number, rBot: number, len: number): THREE.BufferGeometr
   });
 }
 
-/**
- * 手（M4）：圆角方块的手掌（薄面朝身体、手心朝内）+ 一根往前下方伸的拇指，合成一个网格；中心在肘下 cy（贴住手腕）。
- * 原来是压扁的连指胶囊（像香肠）。
- */
+/** 放松的手：掌骨、四根略弯的手指和拇指合为同一网格；手心朝身体，不额外增加 draw call。 */
 function handGeo(s: number, cy: number): THREE.BufferGeometry {
-  return cached(`hand2:${q(s)}:${q(cy)}`, () => {
-    const palm = new RoundedBoxGeometry(0.03 * s, 0.095 * s, 0.07 * s, 2, 0.012 * s);
-    palm.translate(0, cy, -0.002 * s);
-    const thumbSrc = new THREE.CapsuleGeometry(0.012 * s, 0.028 * s, 3, 6);
-    thumbSrc.rotateX(0.55);
-    thumbSrc.translate(0, cy + 0.012 * s, -0.036 * s);
-    const thumb = thumbSrc.toNonIndexed();
-    thumbSrc.dispose();
-    const merged = mergeGeometries([palm, thumb], false) ?? palm;
-    if (merged !== palm) palm.dispose();
-    thumb.dispose();
+  return cached(`hand:${q(s)}:${q(cy)}`, () => {
+    const list: THREE.BufferGeometry[] = [];
+    const add = (g: THREE.BufferGeometry) => {
+      list.push(g.toNonIndexed());
+      g.dispose();
+    };
+    const palm = new THREE.SphereGeometry(1, 12, 8);
+    palm.scale(0.017 * s, 0.045 * s, 0.035 * s);
+    palm.translate(0, cy + 0.014 * s, 0);
+    add(palm);
+    const lengths = [0.055, 0.065, 0.061, 0.046];
+    for (let i = 0; i < lengths.length; i++) {
+      const len = lengths[i]! * s;
+      const finger = new THREE.CapsuleGeometry(0.0075 * s, len - 0.015 * s, 2, 8);
+      finger.rotateZ(-0.1);
+      finger.translate(-0.003 * s, cy - 0.017 * s - len / 2, (-0.024 + i * 0.016) * s);
+      add(finger);
+    }
+    const thumb = new THREE.CapsuleGeometry(0.01 * s, 0.034 * s, 2, 8);
+    thumb.rotateX(0.55);
+    thumb.translate(0.006 * s, cy + 0.005 * s, -0.035 * s);
+    add(thumb);
+    const merged = mergeGeometries(list, false)!;
+    for (const g of list) g.dispose();
     return merged;
   });
 }
@@ -188,7 +198,7 @@ function bandGeo(rTop: number, rBot: number, len: number): THREE.BufferGeometry 
 }
 
 /**
- * 同一关节下、同一材质的几块合成一个网格（M4：肘球 + 前臂 + 手、膝球 + 小腿——每个人偶少 4–6 次 draw call）。
+ * 同一关节、同一材质的部件（裸露前臂与手）合成一个网格，增加手部细节不增加 draw call。
  * parts：[几何, 相对关节的平移 y, 绕 y 的旋转]；一律转成非索引几何再合并（手本身已是非索引的）。
  */
 function mergedLimb(key: string, parts: readonly (readonly [THREE.BufferGeometry, number, number])[]): THREE.BufferGeometry {
@@ -205,18 +215,29 @@ function mergedLimb(key: string, parts: readonly (readonly [THREE.BufferGeometry
   });
 }
 
-/** 关节填缝小球（肘、膝）：与相邻肢体同材质、同粗，弯曲时不露缝（不是外露的“关节球”）。 */
-function jointBallGeo(r: number): THREE.BufferGeometry {
-  return cached(`jball:${q(r)}`, () => new THREE.SphereGeometry(r, 10, 8));
-}
-
-/** 带圆头的肢体（上臂、前臂）：顶端与底端都是半球，看起来关节连贯。 */
-function capsuleLimb(r: number, len: number): THREE.BufferGeometry {
-  return cached(`cap:${q(r)}:${q(len)}`, () => {
-    // r186：CapsuleGeometry(radius, height) 的 height 是中段长度（ARCH §16 #21）
-    const mid = Math.max(0.001, len - 2 * r);
-    const g = new THREE.CapsuleGeometry(r, mid, 4, 10);
-    g.translate(0, -len / 2, 0);
+/** 按衣着/肌肉轮廓放样，圆肩伸入上级关节，肘膝在弯曲时也不会变成外露的球铰。 */
+function contouredLimb(s: number, kind: 'upper' | 'forearm' | 'thigh' | 'shin', width = 1, cloth = true): THREE.BufferGeometry {
+  return cached(`contour:${kind}:${q(s)}:${q(width)}:${cloth}`, () => {
+    // [高度, 半径] 自下而上；零半径只用于藏在相邻部件内的端点。
+    const profiles = {
+      upper: [[-0.315, 0.025], [-0.285, 0.043], [-0.22, 0.05], [-0.13, 0.062], [-0.025, 0.07], [0.025, 0.055], [0.057, 0]],
+      forearm: [[-0.27, 0.032], [-0.24, 0.034], [-0.18, 0.039], [-0.1, 0.05], [-0.03, 0.049], [0.018, 0.041], [0.047, 0]],
+      thigh: [[-0.475, 0.039], [-0.44, 0.061], [-0.38, 0.066], [-0.22, 0.083], [-0.04, 0.095], [0.035, 0.065], [0.07, 0]],
+      shin: [[-0.445, 0.046], [-0.40, 0.049], [-0.30, 0.053], [-0.19, 0.064], [-0.08, 0.066], [0, 0.06], [0.04, 0.046], [0.07, 0]],
+    } as const;
+    const curve = new THREE.SplineCurve(profiles[kind].map(([y, r]) => new THREE.Vector2(r * s * width, y * s)));
+    const g = new THREE.LatheGeometry(curve.getPoints(20), 16);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const len = kind === 'upper' ? 0.315 : kind === 'forearm' ? 0.27 : 0.445;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i) / s, t = Math.max(0, Math.min(1, -y / len));
+      const a = Math.atan2(p.getZ(i), p.getX(i));
+      const fold = cloth ? 1 + 0.035 * Math.sin(a * 5 + t * 3) * Math.pow(Math.sin(t * Math.PI), 2) : 1;
+      p.setX(i, p.getX(i) * fold);
+      p.setZ(i, p.getZ(i) * fold * (kind === 'thigh' ? 1.05 : 0.9));
+    }
+    flipLatheV(g);
+    g.computeVertexNormals();
     return g;
   });
 }
@@ -229,26 +250,21 @@ function boxGeo(w: number, h: number, d: number, cy: number, cz = 0): THREE.Buff
   });
 }
 
-/** 鞋：前端略翘的方头布鞋（顶端在踝关节下方）。 */
+/** 鞋楦：圆趾、收腰、脚背与低鞋跟；鞋底 UV 在下沿，鞋面与鞋底仍共用一个网格。 */
 function shoeGeo(w: number, h: number, len: number, y: number, zFront: number): THREE.BufferGeometry {
   return cached(`shoe:${q(w)}:${q(h)}:${q(len)}:${q(y)}:${q(zFront)}`, () => {
-    const g = new THREE.BoxGeometry(w, h, len, 1, 1, 2);
+    const g = new RoundedBoxGeometry(w, h, len, 2, h * 0.23);
     const p = g.attributes.position as THREE.BufferAttribute;
+    const uv = g.attributes.uv as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const z = p.getZ(i), yy = p.getY(i);
-      // 鞋头收窄、鞋面前低后高
-      if (z < -len * 0.2) p.setX(i, p.getX(i) * 0.82);
-      if (yy > 0 && z < 0) p.setY(i, yy - h * 0.35 * (-z / (len / 2)));
+      const toe = Math.max(0, -z / (len / 2));
+      const waist = Math.exp(-Math.pow((z - len * 0.13) / (len * 0.22), 2));
+      p.setX(i, p.getX(i) * (1 - 0.14 * toe - 0.1 * waist));
+      if (yy > 0) p.setY(i, yy * (1 - 0.45 * toe));
+      uv.setY(i, yy < -h * 0.27 ? 0.1 : 0.9);
     }
     g.computeVertexNormals();
-    // 鞋面贴图：顶面映到黑布区（v≈0.9），底面映到白鞋底（v≈0.1），侧面下四分之一是鞋底（见 accessories.clothShoeTexture）
-    const uv = g.attributes.uv as THREE.BufferAttribute;
-    for (let i = 0; i < uv.count; i++) {
-      if (i >= 12 && i < 18) uv.setY(i, 0.9);
-      else if (i >= 18 && i < 24) uv.setY(i, 0.1);
-    }
-    // 鞋头在 zFront（-z 是前方），鞋跟在 zFront + len；踝关节（z = 0）落在离鞋头约 72% 处（zFront ≈ -0.72·len）。
-    // M4 更正：原来又多减了一次 0.72·len，整只鞋挪到小腿前面 12–38cm，侧面看是两块离脚漂在地上的扁板
     g.translate(0, y, zFront + len / 2);
     return g;
   });
@@ -315,6 +331,18 @@ export function squircleLoft(rows: readonly LoftRow[], seg = 24, o?: { capTop?: 
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
+  // 肩部 UV 单独取纯色区，但法线必须跨 UV 接缝连续，否则领口下方会出现一道硬亮台阶。
+  if (o?.capTop) {
+    const n = g.attributes.normal as THREE.BufferAttribute;
+    const lower = (rows.length - 1) * (seg + 1), upper = rows.length * (seg + 1);
+    for (let i = 0; i <= seg; i++) {
+      const a = lower + i, b = upper + i;
+      const x = n.getX(a) + n.getX(b), y = n.getY(a) + n.getY(b), z = n.getZ(a) + n.getZ(b);
+      const k = 1 / Math.max(1e-8, Math.hypot(x, y, z));
+      n.setXYZ(a, x * k, y * k, z * k);
+      n.setXYZ(b, x * k, y * k, z * k);
+    }
+  }
   return g;
 }
 
@@ -389,24 +417,54 @@ function beltGeo(s: number, bw: number, bd: number): THREE.BufferGeometry {
   ], 20));
 }
 
-/** 长袍（土地）：Lathe 下摆，从腰到脚踝，下摆外撇。 */
+/** 连续长袍：纵向褶随下摆展开；坐姿形变保持整片布盖在膝上，而不是露出两根袍料大腿。 */
 function robeGeo(s: number, bw: number): THREE.BufferGeometry {
   return cached(`robe:${q(s)}:${q(bw)}`, () => {
     const pts: THREE.Vector2[] = [];
-    const top = 0.1 * s, bottom = -0.86 * s;
-    const n = 9;
-    // 自下而上（见 sleeveGeo：y 递增法线才朝外；原来自上而下，袍子内外翻转，M4 加的小腿从袍子正面透出来）
-    for (let i = n; i >= 0; i--) {
-      const t = i / n;
-      const y = top + (bottom - top) * t;
-      const r = (0.17 + 0.09 * t + 0.03 * t * t) * s * bw;
-      pts.push(new THREE.Vector2(r, y));
+    for (let i = 20; i >= 0; i--) {
+      const t = i / 20;
+      pts.push(new THREE.Vector2((0.17 + 0.07 * t + 0.025 * t * t) * s * bw, (0.1 - 0.96 * t) * s));
     }
-    const g = new THREE.LatheGeometry(pts, 14);
+    const g = new THREE.LatheGeometry(pts, 32);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const t = (0.1 - p.getY(i) / s) / 0.96;
+      const a = Math.atan2(p.getZ(i), p.getX(i));
+      const fold = 1 + (0.012 + 0.04 * t) * Math.cos(a * 12 + t * 0.7);
+      p.setX(i, p.getX(i) * fold);
+      p.setZ(i, p.getZ(i) * fold * 0.8);
+    }
     flipLatheV(g);
-    g.scale(1, 1, 0.8);
+    g.computeVertexNormals();
     return g;
   });
+}
+
+/** 每件袍只分配一次姿态端点；只在坐/站过渡时更新顶点，标准、魂影、回放材质共用同一真实轮廓。 */
+function robeDrape(geo: THREE.BufferGeometry, s: number): (bend: number) => void {
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  p.setUsage(THREE.DynamicDrawUsage);
+  const rest = new Float32Array(p.array), seated = new Float32Array(rest.length);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const t = (0.1 - y / s) / 0.96;
+    const front = THREE.MathUtils.smoothstep(-z / Math.max(s * 0.001, Math.hypot(x, z)), -0.85, -0.15);
+    const lap = Math.sin(Math.min(1, t / 0.45) * Math.PI / 2);
+    const frontY = t < 0.45 ? 0.1 - t * 0.075 : 0.06625 - (t - 0.45) * 0.9;
+    seated[i * 3] = x * (1 - 0.06 * t + 0.32 * Math.exp(-Math.pow((t - 0.18) / 0.2, 2)));
+    seated[i * 3 + 1] = ((0.1 - 0.6 * t) * (1 - front) + frontY * front) * s;
+    seated[i * 3 + 2] = z * (1 - 0.18 * t) - front * 0.36 * s * lap;
+  }
+  let previous = -1;
+  return bend => {
+    if (Math.abs(bend - previous) < 1e-5) return;
+    previous = bend;
+    for (let i = 0; i < rest.length; i++) p.array[i] = rest[i]! + (seated[i]! - rest[i]!) * bend;
+    p.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+  };
 }
 
 /** 圆肚（土地、胖子）：Lathe 做的上身，腰腹鼓起。 */
@@ -429,7 +487,7 @@ function bellyTorsoGeo(s: number, bw: number, bulge: number): THREE.BufferGeomet
   });
 }
 
-/** 头的半轴（headSphereGeo 的缩放）：x 0.92、y 1.12、z 1（× r）。 */
+/** 头部基础椭球的半轴：x 0.92、y 1.12、z 1（× r），在此基础上塑造面部轮廓。 */
 const HEAD_AX = [0.92, 1.12, 1] as const;
 
 /**
@@ -438,8 +496,8 @@ const HEAD_AX = [0.92, 1.12, 1] as const;
  */
 function hairlineFrac(style: FaceOpts['hairStyle'], d: number, child: boolean): number {
   if (style === 'bald') return d < 0.17 ? 0 : 0.44 + (d - 0.17) * 0.5;
-  if (style === 'long') return 0.3 + Math.min(1, d / 0.12) * 0.08 + Math.max(0, d - 0.15) * 1.1;
-  return 0.3 + Math.min(1, d / 0.14) * 0.1 + Math.max(0, d - 0.2) * 0.55 + (child ? 0.03 : 0);
+  if (style === 'long') return 0.3 + THREE.MathUtils.smoothstep(d, 0, 0.15) * 0.08 + Math.max(0, d - 0.15) * 1.1;
+  return 0.31 + THREE.MathUtils.smoothstep(d, 0, 0.18) * 0.09 + Math.max(0, d - 0.22) * 0.5 + (child ? 0.03 : 0);
 }
 
 /**
@@ -467,7 +525,7 @@ function hairShellGeo(r: number, style: FaceOpts['hairStyle'], child: boolean): 
       const frac = top + (bot - top) * v;
       const theta = frac * Math.PI;
       // 头顶最厚（发量），往发际线收薄
-      const k = r * (1.085 - 0.05 * v);
+      const k = r * (1.075 - 0.045 * v + 0.012 * Math.sin(phi * 18 + v * 3) * Math.sin(v * Math.PI));
       const st = Math.sin(Math.min(theta, Math.PI / 2)), ct = Math.cos(theta);
       // 赤道以下（长发）不再往里收：保持赤道的水平半径直直垂下
       const hx = HEAD_AX[0] * k * (theta > Math.PI / 2 ? 1 : st);
@@ -501,45 +559,59 @@ function flatUv(g: THREE.BufferGeometry, u: number, v: number): THREE.BufferGeom
   return g;
 }
 
-/**
- * M4 第 2 轮：人头 = 头球 + 头发壳 + 两只耳朵 + 鼻子，合成一个网格（共用脸贴图，0 次额外 draw call）。
- * 原来是一个光滑的蛋：没有头发体积、耳朵、鼻子，1× 取景器 3m 外读成一个空白的蛋。几何在头的局部坐标（球心在原点，正脸 -z）。
- */
+/** 面部有颧骨、眼窝、下颌和鼻梁；所有细节仍合为一个头网格，帽子、眼镜和拍照锚点位置不变。 */
 function humanHeadGeo(r: number, face: FaceOpts): THREE.BufferGeometry {
   const child = face.age === 'child';
-  return cached(`head2:${q(r)}:${face.hairStyle}:${child ? 1 : 0}`, () => {
+  return cached(`head:${q(r)}:${face.hairStyle}:${face.age}:${!!face.female}`, () => {
     const list: THREE.BufferGeometry[] = [];
-    const sphere = new THREE.SphereGeometry(r, 20, 14);
+    const add = (g: THREE.BufferGeometry) => {
+      list.push(g.toNonIndexed());
+      g.dispose();
+    };
+    const sphere = new THREE.SphereGeometry(r, 32, 24);
     sphere.scale(HEAD_AX[0], HEAD_AX[1], HEAD_AX[2]);
-    list.push(sphere.toNonIndexed());
-    sphere.dispose();
-    const hair = hairShellGeo(r, face.hairStyle, child);
-    if (hair) {
-      list.push(hair.toNonIndexed());
-      hair.dispose();
+    const p = sphere.attributes.position as THREE.BufferAttribute;
+    const bump = (x: number, y: number, cx: number, cy: number, wx: number, wy: number) => Math.exp(-(((x - cx) / wx) ** 2 + ((y - cy) / wy) ** 2));
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i) / r, y = p.getY(i) / r, z = p.getZ(i) / r;
+      const lower = Math.max(0, -y / HEAD_AX[1]);
+      const jaw = 1 - (face.female ? 0.18 : child ? 0.08 : 0.1) * lower;
+      let zz = z;
+      if (z < 0) {
+        const front = Math.pow(-z, 3);
+        const socket = bump(Math.abs(x), y, 0.32, 0, 0.2, 0.16);
+        const cheek = bump(Math.abs(x), y, 0.48, -0.27, 0.26, 0.22);
+        const brow = bump(Math.abs(x), y, 0.32, 0.18, 0.24, 0.1);
+        const chin = bump(x, y, 0, -0.72, 0.32, 0.23);
+        zz += front * (0.09 * socket - 0.1 * cheek - 0.065 * brow - 0.21 * chin);
+      }
+      p.setXYZ(i, x * jaw * r, y * r, zz * r);
     }
-    // 耳朵：压扁的小球贴在两侧（与贴图上画的耳朵同高、同位置）；长发盖住耳朵就不做
+    sphere.computeVertexNormals();
+    add(sphere);
+    const hair = hairShellGeo(r, face.hairStyle, child);
+    if (hair) add(hair);
     if (face.hairStyle !== 'long') {
       for (const sx of [-1, 1]) {
-        const ear = new THREE.SphereGeometry(0.19 * r, 8, 6);
-        ear.scale(0.4, 1, 0.7);
-        ear.rotateY(sx * 0.35);
-        ear.translate(sx * 0.96 * r, -0.07 * r, 0.05 * r);
-        flatUv(ear, sx > 0 ? 0.5 : 0.004, 0.48);
-        list.push(ear.toNonIndexed());
-        ear.dispose();
+        const ear = new THREE.SphereGeometry(1, 12, 8);
+        ear.scale(0.1 * r, 0.23 * r, 0.135 * r);
+        ear.rotateY(sx * 0.22);
+        ear.translate(sx * 0.91 * r, -0.07 * r, 0.025 * r);
+        add(flatUv(ear, 0.66, 0.48));
       }
     }
-    // 鼻子：尖朝上（鼻梁）、底朝前下方的圆锥，侧面能看出鼻梁与鼻头
-    const nose = new THREE.ConeGeometry(0.14 * r, 0.45 * r, 8);
-    nose.scale(0.8, 1, 1);
-    nose.rotateX(0.4);
-    nose.translate(0, -0.2 * r, -1.06 * r);
-    flatUv(nose, 0.72, 0.44);
-    list.push(nose.toNonIndexed());
-    nose.dispose();
-    const merged = mergeGeometries(list, false) ?? list[0]!;
-    for (const g of list) if (g !== merged) g.dispose();
+    // 鼻梁与鼻头重叠嵌入脸面，取代尖锥；鼻头大小按儿童/成年人区分。
+    const bridge = new THREE.SphereGeometry(1, 12, 10);
+    bridge.scale(0.105 * r, 0.28 * r, 0.125 * r);
+    bridge.rotateX(-0.2);
+    bridge.translate(0, -0.13 * r, -0.975 * r);
+    add(flatUv(bridge, 0.735, 0.46));
+    const tip = new THREE.SphereGeometry(1, 12, 8);
+    tip.scale((child ? 0.1 : 0.14) * r, 0.1 * r, 0.12 * r);
+    tip.translate(0, -0.31 * r, -1.075 * r);
+    add(flatUv(tip, 0.735, 0.44));
+    const merged = mergeGeometries(list, false)!;
+    for (const g of list) g.dispose();
     merged.computeBoundingSphere();
     return merged;
   });
@@ -554,11 +626,13 @@ const faceCache = new Map<string, THREE.CanvasTexture>();
  * 同参数缓存复用；colorSpace = SRGB。
  */
 export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
-  const key = `v2${JSON.stringify(o)}`;
+  const key = JSON.stringify(o);
   const hit = faceCache.get(key);
   if (hit) return hit;
   const W = 512, H = 256;
-  const { canvas, g } = createCanvas(W, H);
+  const { canvas, g } = createCanvas(W, 384);
+  // 纵向提高眼睑/嘴唇的采样密度，保持 512×256 绘画坐标；整区仍须落在 64 MiB 贴图预算内。
+  g.scale(1, 1.5);
   const r = rng(o.seed ?? 1);
   const fx = W * 0.75;
   // 皮肤底色 + 脸颊的一点红
@@ -593,13 +667,8 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
     g.beginPath();
     g.moveTo(0, 0);
     for (let x = 0; x <= W; x += 4) {
-      const d = circ(x);
-      let hl: number;
-      if (o.hairStyle === 'bald') hl = d < 0.17 ? 0 : H * (0.44 + (d - 0.17) * 0.5);
-      else if (o.hairStyle === 'long') hl = H * (0.3 + Math.min(1, d / 0.12) * 0.08 + Math.max(0, d - 0.15) * 1.1);
-      else hl = H * (0.3 + Math.min(1, d / 0.14) * 0.1 + Math.max(0, d - 0.2) * 0.55);
-      if (o.age === 'child' && o.hairStyle === 'short') hl += H * 0.03;
-      g.lineTo(x, hl + range(r, -1.5, 1.5));
+      const hl = H * hairlineFrac(o.hairStyle, circ(x), o.age === 'child');
+      g.lineTo(x, hl + range(r, -0.4, 0.4));
     }
     g.lineTo(W, 0);
     g.closePath();
@@ -608,10 +677,6 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
       // 秃顶：头顶一圈皮肤、两侧与后脑剩一圈
       g.fillStyle = o.skin;
       g.fillRect(0, 0, W, H * 0.36);
-      g.fillStyle = o.hair;
-      g.globalAlpha = 0.5;
-      g.fillRect(0, H * 0.36, W, 2);
-      g.globalAlpha = 1;
     }
     // 发丝
     g.strokeStyle = shade(o.hair, 0.7);
@@ -619,6 +684,7 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
     for (let i = 0; i < 160; i++) {
       const x = r() * W;
       const y = r() * H * 0.45;
+      if (y > H * hairlineFrac(o.hairStyle, circ(x), o.age === 'child') || (o.hairStyle === 'bald' && y < H * 0.36)) continue;
       g.globalAlpha = 0.35;
       g.beginPath();
       g.moveTo(x, y);
@@ -639,8 +705,8 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
   // 五官
   const eyeY = H * 0.5, eyeDx = W * 0.05;
   const browK = o.brows ?? (o.age === 'young' ? 1 : 0.8);
-  // M4 第 2 轮：五官放大加粗（眼睛 ×1.3、眉眼嘴的笔画 ×1.6）——1× 取景器 3m 外头只有三十来个像素，原来的细线读不出来
-  const EYE = 1.3, STROKE = 1.6;
+  // 收敛成杏眼与细眼睑，不用放大的白椭圆和黑点冒充五官。
+  const EYE = 1.1, STROKE = 0.85;
   for (const sgn of [-1, 1]) {
     const ex = fx + sgn * eyeDx;
     // 眼窝阴影
@@ -648,20 +714,31 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
     g.beginPath();
     g.ellipse(ex, eyeY, W * 0.028 * EYE, H * 0.03 * EYE, 0, 0, Math.PI * 2);
     g.fill();
-    // 眼白 + 瞳孔
-    g.fillStyle = '#e9e2d6';
+    const ew = W * 0.019, eh = H * (o.age === 'old' ? 0.009 : 0.012);
+    g.save();
     g.beginPath();
-    g.ellipse(ex, eyeY, W * 0.017 * EYE, H * 0.012 * EYE, 0, 0, Math.PI * 2);
+    g.moveTo(ex - ew, eyeY);
+    g.bezierCurveTo(ex - ew * 0.4, eyeY - eh * 1.35, ex + ew * 0.45, eyeY - eh, ex + ew, eyeY);
+    g.bezierCurveTo(ex + ew * 0.4, eyeY + eh, ex - ew * 0.45, eyeY + eh * 0.8, ex - ew, eyeY);
+    g.fillStyle = '#bdb5a4';
     g.fill();
-    g.fillStyle = '#1a120e';
+    g.clip();
+    g.fillStyle = '#4a3829';
     g.beginPath();
-    g.arc(ex, eyeY, H * 0.011 * EYE, 0, Math.PI * 2);
+    g.arc(ex, eyeY, H * 0.011, 0, Math.PI * 2);
     g.fill();
-    // 上眼皮一道深线（眼睛在暗处也有轮廓）
-    g.strokeStyle = 'rgba(40,20,14,0.75)';
-    g.lineWidth = 1.2 * STROKE;
+    g.fillStyle = '#191715';
     g.beginPath();
-    g.ellipse(ex, eyeY, W * 0.018 * EYE, H * 0.014 * EYE, 0, Math.PI * 1.05, Math.PI * 1.95);
+    g.arc(ex, eyeY, H * 0.006, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(238,226,206,0.7)';
+    g.fillRect(ex - 0.6, eyeY - 1.4, 0.7, 0.7);
+    g.restore();
+    g.strokeStyle = 'rgba(48,30,23,0.8)';
+    g.lineWidth = 1.1;
+    g.beginPath();
+    g.moveTo(ex - ew, eyeY);
+    g.bezierCurveTo(ex - ew * 0.4, eyeY - eh * 1.35, ex + ew * 0.45, eyeY - eh, ex + ew, eyeY);
     g.stroke();
     // 眉
     g.strokeStyle = o.hairStyle === 'bald' ? o.hair : shade(o.hair, 0.8);
@@ -699,20 +776,25 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
   g.fill();
   // 嘴
   const mouthY = H * 0.665;
-  g.strokeStyle = o.female ? 'rgba(150,60,60,0.85)' : 'rgba(110,50,40,0.85)';
-  g.lineWidth = 2.5 * STROKE;
+  g.fillStyle = o.female ? 'rgba(158,76,71,0.35)' : 'rgba(130,72,58,0.26)';
+  g.beginPath();
+  g.ellipse(fx, mouthY + 0.5, W * 0.024, H * 0.008, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(78,44,35,0.65)';
+  g.lineWidth = 0.85;
   g.beginPath();
   g.moveTo(fx - W * 0.025, mouthY);
-  g.quadraticCurveTo(fx, mouthY + (o.age === 'old' ? H * 0.006 : -H * 0.004), fx + W * 0.025, mouthY);
+  g.bezierCurveTo(fx - W * 0.012, mouthY + 0.8, fx - W * 0.006, mouthY - 0.8, fx, mouthY);
+  g.bezierCurveTo(fx + W * 0.006, mouthY - 0.8, fx + W * 0.012, mouthY + 0.8, fx + W * 0.025, mouthY);
   g.stroke();
   if (o.age === 'old') {
     // 法令纹、抬头纹
-    g.strokeStyle = 'rgba(70,40,30,0.3)';
-    g.lineWidth = 1.5 * STROKE;
+    g.strokeStyle = 'rgba(85,53,40,0.17)';
+    g.lineWidth = 0.7;
     for (const sgn of [-1, 1]) {
       g.beginPath();
       g.moveTo(fx + sgn * W * 0.02, eyeY + H * 0.09);
-      g.quadraticCurveTo(fx + sgn * W * 0.035, mouthY - H * 0.02, fx + sgn * W * 0.03, mouthY + H * 0.03);
+      g.quadraticCurveTo(fx + sgn * W * 0.04, mouthY - H * 0.025, fx + sgn * W * 0.035, mouthY + H * 0.012);
       g.stroke();
     }
     for (let i = 0; i < 3; i++) {
@@ -725,6 +807,60 @@ export function faceTexture(o: FaceOpts): THREE.CanvasTexture {
   const tex = canvasToTexture(canvas);
   tex.name = 'face';
   faceCache.set(key, tex);
+  return tex;
+}
+
+const fabricCache: Partial<Record<'shirt' | 'sleeve' | 'pants', THREE.CanvasTexture>> = {};
+
+/** 无花纹衣料仍有缝线、受力褶和细织纹；灰度图乘原色，不改角色的服装配色。 */
+function fabricTexture(part: 'shirt' | 'sleeve' | 'pants'): THREE.CanvasTexture {
+  const hit = fabricCache[part];
+  if (hit) return hit;
+  const { canvas, g } = createCanvas(256, 256);
+  g.fillStyle = '#f2f2f2';
+  g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(0,0,0,0.035)';
+  g.lineWidth = 0.5;
+  for (let i = 0; i < 256; i += 3) {
+    g.beginPath();
+    g.moveTo(i, 0); g.lineTo(i, 256);
+    g.moveTo(0, i); g.lineTo(256, i);
+    g.stroke();
+  }
+  const r = rng(part === 'shirt' ? 81 : part === 'pants' ? 82 : 83);
+  g.lineWidth = 2;
+  g.strokeStyle = 'rgba(0,0,0,0.12)';
+  g.shadowColor = 'rgba(0,0,0,0.18)';
+  g.shadowBlur = 6;
+  for (let i = 0; i < 14; i++) {
+    const x = r() * 256, y = part === 'pants' ? range(r, 110, 245) : range(r, 165, 250);
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(x + 10, y - 12, x + range(r, -15, 15), y - range(r, 22, 55));
+    g.stroke();
+  }
+  g.shadowBlur = 0;
+  g.lineWidth = 1;
+  g.strokeStyle = 'rgba(0,0,0,0.2)';
+  if (part === 'shirt') {
+    g.strokeRect(62, 12, 4, 244);
+    g.strokeRect(26, 62, 22, 38);
+    g.strokeRect(80, 62, 22, 38);
+    g.fillStyle = '#8d8d8d';
+    for (let y = 38; y < 256; y += 43) {
+      g.beginPath();
+      g.arc(64, y, 1.3, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else {
+    g.beginPath();
+    g.moveTo(3, 0); g.lineTo(3, 256);
+    g.moveTo(0, 246); g.lineTo(256, 246);
+    g.stroke();
+  }
+  const tex = canvasToTexture(canvas);
+  tex.name = `fabric.${part}`;
+  fabricCache[part] = tex;
   return tex;
 }
 
@@ -827,8 +963,8 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     m.userData.rigOwned = true;
     return m;
   };
-  const shirt = own(newMat({ color: spec.shirt, roughness: 0.88, tempC: liveTemp }));
-  const pants = own(newMat({ color: spec.pants, roughness: 0.9, tempC: liveTemp }));
+  const shirt = own(newMat({ color: spec.shirt, map: fabricTexture('shirt'), roughness: 0.88, tempC: liveTemp }));
+  const pants = own(newMat({ color: spec.pants, map: fabricTexture('pants'), roughness: 0.9, tempC: liveTemp }));
   const shoes = own(newMat({ color: spec.shoes ?? '#16161a', roughness: 0.75, tempC: liveTemp }));
   shoes.userData.shoes = true;
   // M4：皮肤更哑（0.7 的高光加上主角的冷色轮廓光，像上了清漆的木棍）
@@ -840,8 +976,8 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     shoes.color.set(0xffffff);
   }
   const torsoMat = style?.torsoMap ? own(newMat({ color: 0xffffff, map: style.torsoMap, roughness: 0.88, tempC: liveTemp })) : shirt;
-  const sleeveMat = style?.sleeveMap ? own(newMat({ color: 0xffffff, map: style.sleeveMap, roughness: 0.88, tempC: liveTemp })) : shirt;
-  const robeMat = style?.robeMap ? own(newMat({ color: 0xffffff, map: style.robeMap, roughness: 0.92, tempC: liveTemp })) : shirt;
+  const sleeveMat = own(newMat({ color: style?.sleeveMap ? 0xffffff : spec.shirt, map: style?.sleeveMap ?? fabricTexture('sleeve'), roughness: 0.88, tempC: liveTemp }));
+  const robeMat = style?.robeMap ? own(newMat({ color: 0xffffff, map: style.robeMap, roughness: 0.92, tempC: liveTemp })) : sleeveMat;
 
   const root = new THREE.Group();
   root.name = 'humanoid';
@@ -898,14 +1034,14 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
   if (spec.robe) {
     // 长袍：胖子（土地）是 Lathe 圆肚，其余（新娘的旗袍式长裙）是普通上身
     addPart('torso', J.spine, spec.build === 'stout' ? bellyTorsoGeo(s, bw, 0.07) : torsoGeo(s, bw, bd, 0), robeMat);
-    addPart('robe', J.hips, robeGeo(s, bw), robeMat);
+    addPart('robe', J.hips, robeGeo(s, bw).clone(), robeMat);
   } else {
     addPart('torso', J.spine, torsoGeo(s, bw, bd, build.belly), torsoMat);
     addPart('pelvis', J.hips, pelvisGeo(s, bw, bd), pants);
     addPart('belt', J.hips, beltGeo(s, bw, bd), belt);
   }
 
-  // 手臂：短袖 = 袖筒 + 裸臂；长袖 = 整条袖子（M4：去掉胶囊端头的“关节球”，肘部用同粗小球填缝，袖口有边）
+  // 袖子的轮廓包含圆肩与收口，肘部由相邻衣片重叠，不额外挂关节球。
   const armR = 0.043 * s;
   const long = spec.sleeves === 'long';
   const hemColor = new THREE.Color(spec.robe ? 0xffffff : spec.shirt).multiplyScalar(0.72);
@@ -915,56 +1051,40 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     const sh = side === 'L' ? J.shoulderL : J.shoulderR;
     const el = side === 'L' ? J.elbowL : J.elbowR;
     const sl = spec.robe ? robeMat : sleeveMat;
-    // 手：手掌 + 拇指，手心朝内（绕 y 转 ±0.25）
+    // 手心朝内；关节位置保留，已有杯子、篮子和拐杖仍用原锚点。
     const handRy = side === 'L' ? 0.25 : -0.25;
     if (long) {
-      // M4 第 2 轮：上臂、肘球、前臂顶端同粗（armR × 1.15），站着时肘部不再有一道台阶
-      addPart(`upperArm${side}`, sh, capsuleLimb(armR * 1.15, 0.31 * s), sl);
-      // 前臂 + 肘部同料小球填缝（坐着屈肘时上臂与前臂之间不露缝），合成一个网格
-      addPart(`forearm${side}`, el, mergedLimb(`fl2:${q(s)}:${q(armR)}`, [
-        [limbGeo(armR * 1.15, armR * 1.04, 0.265 * s), 0, 0], [jointBallGeo(armR * 1.15), 0, 0],
-      ]), sl);
-      // 袖口一圈（手从袖口里伸出来，不再和袖子分开悬着）
-      addPart(`cuff${side}`, el, bandGeo(armR * 1.07, armR * 1.07, 0.024 * s), spec.robe ? sl : hem()).position.y = -0.244 * s;
+      addPart(`upperArm${side}`, sh, contouredLimb(s, 'upper', bw), sl);
+      addPart(`forearm${side}`, el, contouredLimb(s, 'forearm', bw), sl);
+      addPart(`cuff${side}`, el, bandGeo(0.035 * s * bw, 0.035 * s * bw, 0.023 * s), spec.robe ? sl : hem()).position.y = -0.245 * s;
       addPart(`hand${side}`, el, handGeo(s, -0.29 * s), skin).rotation.y = handRy;
     } else {
       // 袖筒：圆肩 + 外撇的敞口筒，长到上臂中段；袖口压一道深色边
       addPart(`sleeve${side}`, sh, sleeveGeo(armR * 1.5, armR * 1.62, 0.21 * s), sl).position.y = 0.012 * s;
       addPart(`sleeveHem${side}`, sh, bandGeo(armR * 1.6, armR * 1.635, 0.02 * s), hem()).position.y = (0.012 - 0.195) * s;
-      // 上臂顶端藏进袖筒；前臂与上臂在肘部重叠，肘部同粗小球填缝；前臂 + 肘球 + 手同是皮肤，合成一个网格
-      addPart(`upperArm${side}`, sh, limbGeo(armR, armR * 0.9, 0.29 * s), skin).position.y = -0.04 * s;
-      addPart(`forearm${side}`, el, mergedLimb(`fs:${q(s)}:${q(armR)}:${side}`, [
-        [limbGeo(armR * 0.9, armR * 0.72, 0.26 * s), 0.015 * s, 0], [jointBallGeo(armR * 0.9), 0, 0], [handGeo(s, -0.265 * s), 0, handRy],
+      addPart(`upperArm${side}`, sh, contouredLimb(s, 'upper', 0.73, false), skin);
+      addPart(`forearm${side}`, el, mergedLimb(`bare:${q(s)}:${side}`, [
+        [contouredLimb(s, 'forearm', 0.78, false), 0, 0], [handGeo(s, -0.29 * s), 0, handRy],
       ]), skin);
     }
   }
 
-  // 腿（长袍时腿藏在下摆里；M4：长袍也建一截小腿，坐下时从袍摆下露出来接到鞋上，不再是两只漂着的鞋）
+  // 长袍下保留正常的腿；坐姿由整片袍摆覆盖，不再用两个外露筒子表示布料。
   for (const side of ['L', 'R'] as const) {
     const hp = side === 'L' ? J.hipL : J.hipR;
     const kn = side === 'L' ? J.kneeL : J.kneeR;
-    if (!spec.robe) {
-      addPart(`thigh${side}`, hp, limbGeo(0.086 * s * bw, 0.066 * s * bw, 0.44 * s), pants);
-      // 小腿顶端上移盖住膝部的缝，膝部同粗小球填缝（弯腿时不露缝）；两块同料，合成一个网格
-      addPart(`shin${side}`, kn, mergedLimb(`sh:${q(s)}:${q(bw)}`, [
-        [limbGeo(0.063 * s * bw, 0.05 * s, 0.44 * s), 0.02 * s, 0], [jointBallGeo(0.064 * s * bw), 0, 0],
-      ]), pants);
-    } else {
-      // 长袍：大腿用袍料（坐下时袍子搭在腿上、膝盖在袍摆前，小腿从膝下接到鞋上；站着时整个藏在袍子里）
-      addPart(`thigh${side}`, hp, limbGeo(0.075 * s * bw, 0.068 * s * bw, 0.44 * s), robeMat);
-      addPart(`knee${side}`, kn, jointBallGeo(0.068 * s * bw), robeMat);
-      addPart(`shin${side}`, kn, limbGeo(0.055 * s, 0.048 * s, 0.42 * s), pants).position.y = 0.02 * s;
-    }
+    addPart(`thigh${side}`, hp, contouredLimb(s, 'thigh', bw * (spec.robe ? 0.74 : 1)), pants);
+    addPart(`shin${side}`, kn, contouredLimb(s, 'shin', bw * (spec.robe ? 0.8 : 1)), pants);
     addPart(`shoe${side}`, kn, shoeGeo(0.1 * s, 0.075 * s, 0.26 * s, -0.455 * s, -0.19 * s), shoes);
   }
 
   // 头
   let headMesh: THREE.Object3D | null = null;
   if (spec.head === 'human') {
-    addPart('neckSkin', J.neck, limbGeo(0.047 * s, 0.05 * s, 0.1 * s), skin).position.y = 0.08 * s;
+    addPart('neckSkin', J.neck, limbGeo(0.044 * s, 0.063 * s, 0.09 * s, 16), skin).position.y = 0.065 * s;
     const f: FaceOpts = face ?? { skin: `#${new THREE.Color(skinColor).getHexString()}`, hair: '#1e1a17', hairStyle: 'short', age: 'old' };
     const faceMat = own(newMat({ color: 0xffffff, map: faceTexture(f), roughness: 0.8, tempC: liveTemp }));
-    // M4 第 2 轮：头球 + 头发壳 + 耳朵 + 鼻子一个网格（humanHeadGeo）
+    // 面部轮廓与耳鼻、头发合并，五官细化不增加头部 draw call。
     const head = addPart('head', J.headSlot, humanHeadGeo(0.1 * s, f), faceMat);
     head.position.set(0, 0.14 * s, -0.005 * s);
     headMesh = head;
@@ -1049,7 +1169,9 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
       mapAmt: map ? (face ? 1 : replay ? 0.85 : 0.5) : 0,
       base: src?.color ?? 0xffffff,
       baseAmt: replay ? 0.45 : tune?.baseAmt ?? (face ? 0.3 : 0.36),
-      solid: solidOverride ?? (accessory ? 1 : face ? 0.35 : 0),
+      solid: solidOverride ?? (accessory ? 1 : face ? 0.35 : 0.22),
+      rim: replay ? 0.22 : 0.32,
+      albedo: 1,
       ...(replay ? { opacity: 0.75 } : {}),
     };
     const ghostColor = tune?.tint ?? color ?? PALETTE.GHOST;
@@ -1132,7 +1254,7 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
   setTargets('stand');
   for (const n of JOINT_NAMES) cur.get(n)!.copy(to.get(n)!);
 
-  const robe = parts.robe;
+  const drape = parts.robe ? robeDrape(parts.robe.geometry, s) : null;
   const legsWalk = () => poseName !== 'sit' && poseName !== 'lie' && poseName !== 'crouch';
   const armsSwing = () => poseName === 'stand' || poseName === 'walk' || poseName === 'look_up';
 
@@ -1168,11 +1290,7 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     pivot.rotation.x = rotCur;
     // 躺下时把背抬到地面以上（身体绕脚底转 90° 后背会在 y<0）
     pivot.position.y = Math.sin(rotCur) * 0.12 * s * bd;
-    if (robe) {
-      // 长袍坐下时下摆压扁，不插进地里
-      const k = hipY > 0 ? Math.max(0.35, (hipY - dropCur) / hipY) : 1;
-      robe.scale.set(1 + (1 - k) * 0.4, k, 1 + (1 - k) * 0.6);
-    }
+    if (drape) drape(THREE.MathUtils.clamp((J.hipL.rotation.x + J.hipR.rotation.x) / Math.PI, 0, 1));
   };
   apply();
 

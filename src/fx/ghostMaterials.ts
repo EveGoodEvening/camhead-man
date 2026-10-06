@@ -65,6 +65,8 @@ uniform float uMapAmt;
 uniform vec3 uBase;
 uniform float uBaseAmt;
 uniform float uSolid;
+uniform float uRim;
+uniform float uAlbedoAmt;
 varying vec3 vViewNormal;
 varying vec3 vViewDir;
 varying vec3 vWorldPos;
@@ -77,14 +79,20 @@ void main() {
   float band = 0.82 + 0.18 * sin( vWorldPos.y * 16.0 - uTime * 2.2 );
   float breathe = 0.93 + 0.07 * sin( uTime * 1.3 + vWorldPos.x * 0.7 );
   vec3 tex = uHasMap > 0.5 ? texture2D( uMap, vUv ).rgb : vec3( 1.0 );
-  float tl = dot( tex, vec3( 0.3, 0.59, 0.11 ) );
+  vec3 alb = uBase * tex;
+  float tl = dot( mix( tex, alb, uAlbedoAmt ), vec3( 0.3, 0.59, 0.11 ) );
   float detail = uMapAmt * uHasMap;
-  vec3 col = uColor * ( 0.28 + 0.22 * detail + 1.9 * fres ) * band * breathe;
+  vec3 col = uColor * ( 0.28 + 0.22 * detail + 1.9 * uRim * fres ) * band * breathe;
   col *= mix( 1.0, 0.15 + 1.9 * tl, detail );
   // 原色：按亮度归一的底色 × 贴图，只取色相，亮度跟魂影走；边缘仍是魂色
-  vec3 alb = uBase * tex;
   vec3 hue = min( alb / max( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.02 ), vec3( 3.0 ) );
   col = mix( col, hue * dot( col, vec3( 0.3, 0.59, 0.11 ) ), uBaseAmt * ( 1.0 - 0.7 * fres ) );
+  // 人物保留衣料明暗，避免灰度布纹把深色裤子抬成白色塑料；无人物参数的场景魂影不变。
+  if ( uAlbedoAmt > 0.0 ) {
+    float surface = 0.55 + 0.45 * sqrt( clamp( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.0, 1.0 ) );
+    float shape = 0.75 + 0.25 * max( 0.0, dot( n, normalize( vec3( -0.4, 0.65, 1.0 ) ) ) );
+    col *= mix( 1.0, surface * shape, uAlbedoAmt );
+  }
   float a = uOpacity * mix( 0.42 + 0.6 * detail + 1.1 * fres, 1.55 + 0.4 * fres, uSolid ) * mix( 1.0, band, 0.5 );
   gl_FragColor = vec4( col, clamp( a, 0.0, 1.0 ) );
   #include <fog_fragment>
@@ -108,6 +116,8 @@ uniform float uMapAmt;
 uniform vec3 uBase;
 uniform float uBaseAmt;
 uniform float uSolid;
+uniform float uRim;
+uniform float uAlbedoAmt;
 varying vec3 vViewNormal;
 varying vec3 vViewDir;
 varying vec3 vWorldPos;
@@ -124,13 +134,17 @@ void main() {
   float row = floor( gl_FragCoord.y / 6.0 );
   float drop = step( 0.985, fract( sin( row * 91.7 + floor( uTime * 9.0 ) * 13.1 ) * 43758.5453 ) );
   vec3 tex = uHasMap > 0.5 ? texture2D( uMap, vUv ).rgb : vec3( 1.0 );
-  float tl = dot( tex, vec3( 0.3, 0.59, 0.11 ) );
-  float detail = uMapAmt * uHasMap;
-  vec3 col = uColor * ( 0.55 * up + 1.4 * fres ) * line * ( 1.0 - 0.3 * drop );
-  col *= mix( 1.0, 0.45 + 1.0 * tl, detail );
   vec3 alb = uBase * tex;
+  float tl = dot( mix( tex, alb, uAlbedoAmt ), vec3( 0.3, 0.59, 0.11 ) );
+  float detail = uMapAmt * uHasMap;
+  vec3 col = uColor * ( 0.55 * up + 1.4 * uRim * fres ) * line * ( 1.0 - 0.3 * drop );
+  col *= mix( 1.0, 0.45 + 1.0 * tl, detail );
   vec3 hue = min( alb / max( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.02 ), vec3( 3.0 ) );
   col = mix( col, hue * dot( col, vec3( 0.3, 0.59, 0.11 ) ), uBaseAmt * ( 1.0 - 0.7 * fres ) );
+  if ( uAlbedoAmt > 0.0 ) {
+    float surface = 0.55 + 0.45 * sqrt( clamp( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.0, 1.0 ) );
+    col *= mix( 1.0, surface, uAlbedoAmt );
+  }
   float a = uOpacity * mix( 0.75 + 0.5 * fres, 1.3, uSolid );
   gl_FragColor = vec4( col, clamp( a, 0.0, 1.0 ) );
   #include <fog_fragment>
@@ -185,6 +199,10 @@ export interface GhostDetail {
   base?: THREE.ColorRepresentation;
   baseAmt?: number;
   solid?: number;
+  /** 人物收敛分段轮廓光；缺省 1 保持场景魂影原样。 */
+  rim?: number;
+  /** 保留衣料反照率明暗的权重；缺省 0 保持纯发光效果。 */
+  albedo?: number;
   /** M4 第 2 轮：不透明度（缺省：魂影 0.5、回放 0.6；人偶的回放部件用 0.75） */
   opacity?: number;
 }
@@ -196,6 +214,7 @@ function makeUniforms(color: THREE.ColorRepresentation, opacity: number, d?: Gho
       uColor: { value: new THREE.Color(color) }, uOpacity: { value: opacity },
       uMap: { value: null }, uHasMap: { value: d?.map ? 1 : 0 }, uMapAmt: { value: d?.mapAmt ?? 0 },
       uBase: { value: new THREE.Color(d?.base ?? 0xffffff) }, uBaseAmt: { value: d?.baseAmt ?? 0 }, uSolid: { value: d?.solid ?? 0 },
+      uRim: { value: d?.rim ?? 1 }, uAlbedoAmt: { value: d?.albedo ?? 0 },
     },
   ]) as Record<string, THREE.IUniform<unknown>>;
 }

@@ -830,7 +830,16 @@ function beard(h: HumanoidInternal): THREE.Object3D {
     const push = row[3] - chest;
     return [row[0], row[1], row[2] - push, row[3] - push];
   };
-  for (let j = 0; j < keys.length; j++) keys[j] = clear(keys[j]!);
+  // 推开的量往下单调不减，并且从下巴开始渐进（不出一个水平的台阶）
+  {
+    const push = keys.map(r => r[3] - clear(r)[3]);
+    for (let j = 1; j < push.length; j++) push[j] = Math.max(push[j]!, push[j - 1]!);
+    const sm = push.map((p, j) => (j === 0 ? p : 0.25 * push[j - 1]! + 0.5 * p + 0.25 * (push[j + 1] ?? p)));
+    for (let j = 0; j < keys.length; j++) {
+      const r = keys[j]!;
+      keys[j] = [r[0], r[1], r[2] - sm[j]!, r[3] - sm[j]!];
+    }
+  }
   // 关键圈之间插值（Catmull-Rom 过每个关键圈）
   const N = 28, sub = 3;
   const rows: Float32Array[] = [];
@@ -841,7 +850,7 @@ function beard(h: HumanoidInternal): THREE.Object3D {
     for (let q = 0; q < sub; q++) {
       const t = q / sub;
       const A = keys[Math.max(0, j - 1)]!, B = keys[j]!, C = keys[j + 1]!, Dk = keys[Math.min(K - 1, j + 2)]!;
-      const row = clear([0, 1, 2, 3].map(c => cr(A[c]!, B[c]!, C[c]!, Dk[c]!, t)) as [number, number, number, number]);
+      const row = [0, 1, 2, 3].map(c => cr(A[c]!, B[c]!, C[c]!, Dk[c]!, t)) as [number, number, number, number];
       rows.push(beardRing(row, N, (j + t) / (K - 1), k));
       vs.push((j + t) / (K - 1));
     }

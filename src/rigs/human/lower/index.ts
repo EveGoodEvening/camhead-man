@@ -1,128 +1,80 @@
 // owner: WP2
-// char2 区域：下身（WP-L）——骨盆/裤子、腿、踝、鞋、腰带、长袍与坐姿下摆。冻结接口：buildLower(ctx)。
-// WP0 时是原样搬来的旧版实现（骨盆块、Lathe 腿、圆角盒鞋、Lathe 长袍 + 坐姿形变）。
+// char2 区域：下身（WP-L）——裤子（骨盆 → 裆 → 两条裤腿 → 裤脚，一整片蒙皮）、皮带、鞋、长袍/旗袍裙与坐姿下摆。
+// 冻结接口：buildLower(ctx)、REGION_LEGACY。设计见 test-artifacts/work/char2/PLAN.md §3.3；各部件见同目录：
+//   trousers.ts 裤子、shoes.ts 鞋、belt.ts 皮带与布腰带、robe.ts 长袍/裙与坐姿形、geom.ts 公用小工具与下身款式（lowerStyleOf）。
+// 网格（draw call）：裤装 = pants + shoes + belt（≤ 3）；长袍 = robe（own，坐姿时 CPU 改顶点）+ shoes + belt（土地的布腰带）。
+// 上身还是 WP0 旧版构建器时（upper/ 的 REGION_LEGACY），旧躯干的下沿在 spine 关节（hips + 0.10s）、比 WAIST 高 7.5cm：
+// 这里补一圈“过渡腰”盖住缝（legacyBridge，自己一个网格），上身换成新构建器后自动不建。
 
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { cached, contouredLimb, flipLatheV, q, squircleLoft } from '../shared';
-import type { BuildCtx, RegionResult, RigidPart } from '../types';
+import { REGION_LEGACY as UPPER_LEGACY } from '../upper';
+import { loftRings, setSkin, snapRing } from '../shared';
+import type { BuildCtx, RegionResult, SkinnedPiece } from '../types';
+import { buildBelt, buildSash } from './belt';
+import { asymRing, inflateRing, lowerStyleOf, W } from './geom';
+import { buildRobe } from './robe';
+import { buildShoes } from './shoes';
+import { buildTrousers, legFrame } from './trousers';
 
-/**
- * true = 这里还是 WP0 搬来的旧版构建器（按成年人关节写死）。三个区域（head/upper/lower）都是 true 时，assemble 用旧版关节布局
- * （儿童、土地也按成年人数值摆），外观与拆分前逐像素一致。换上新构建器（按 ctx.layout/ctx.land/ctx.seams 建）后改成 false：
- * 只要有一个区域是 false，全部人偶就用 profile 的关节布局（profile.ts jointLayout）。
- */
-export const REGION_LEGACY = true;
+/** false：下身已是 char2 构建器（按 ctx.layout/land/seams 建），全部人偶用 profile 的关节布局。 */
+export const REGION_LEGACY = false;
 
-/** 鞋楦：圆趾、收腰、脚背与低鞋跟；鞋底 UV 在下沿，鞋面与鞋底仍共用一个网格。 */
-function shoeGeo(w: number, h: number, len: number, y: number, zFront: number): THREE.BufferGeometry {
-  return cached(`shoe:${q(w)}:${q(h)}:${q(len)}:${q(y)}:${q(zFront)}`, () => {
-    const g = new RoundedBoxGeometry(w, h, len, 2, h * 0.23);
-    const p = g.attributes.position as THREE.BufferAttribute;
-    const uv = g.attributes.uv as THREE.BufferAttribute;
-    for (let i = 0; i < p.count; i++) {
-      const z = p.getZ(i), yy = p.getY(i);
-      const toe = Math.max(0, -z / (len / 2));
-      const waist = Math.exp(-Math.pow((z - len * 0.13) / (len * 0.22), 2));
-      p.setX(i, p.getX(i) * (1 - 0.14 * toe - 0.1 * waist));
-      if (yy > 0) p.setY(i, yy * (1 - 0.45 * toe));
-      uv.setY(i, yy < -h * 0.27 ? 0.1 : 0.9);
-    }
-    g.computeVertexNormals();
-    g.translate(0, y, zFront + len / 2);
-    return g;
-  });
-}
-
-/** 骨盆（裤腰到裆）与腰带：同样的圆角方截面。 */
-function pelvisGeo(s: number, bw: number, bd: number): THREE.BufferGeometry {
-  return cached(`pelvis:${q(s)}:${q(bw)}:${q(bd)}`, () => squircleLoft([
-    { y: -0.07 * s, a: 0.13 * s * bw, b: 0.09 * s * bd },
-    { y: 0.0, a: 0.158 * s * bw, b: 0.104 * s * bd },
-    { y: 0.11 * s, a: 0.161 * s * bw, b: 0.104 * s * bd },
-  ], 20, { capBottom: true }));
-}
-
-function beltGeo(s: number, bw: number, bd: number): THREE.BufferGeometry {
-  return cached(`belt:${q(s)}:${q(bw)}:${q(bd)}`, () => squircleLoft([
-    { y: 0.085 * s, a: 0.166 * s * bw, b: 0.109 * s * bd },
-    { y: 0.118 * s, a: 0.167 * s * bw, b: 0.11 * s * bd },
-  ], 20));
-}
-
-/** 连续长袍：纵向褶随下摆展开；坐姿形变保持整片布盖在膝上，而不是露出两根袍料大腿。 */
-function robeGeo(s: number, bw: number): THREE.BufferGeometry {
-  return cached(`robe:${q(s)}:${q(bw)}`, () => {
-    const pts: THREE.Vector2[] = [];
-    for (let i = 20; i >= 0; i--) {
-      const t = i / 20;
-      pts.push(new THREE.Vector2((0.17 + 0.07 * t + 0.025 * t * t) * s * bw, (0.1 - 0.96 * t) * s));
-    }
-    const g = new THREE.LatheGeometry(pts, 32);
-    const p = g.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < p.count; i++) {
-      const t = (0.1 - p.getY(i) / s) / 0.96;
-      const a = Math.atan2(p.getZ(i), p.getX(i));
-      const fold = 1 + (0.012 + 0.04 * t) * Math.cos(a * 12 + t * 0.7);
-      p.setX(i, p.getX(i) * fold);
-      p.setZ(i, p.getZ(i) * fold * 0.8);
-    }
-    flipLatheV(g);
-    g.computeVertexNormals();
-    return g;
-  });
-}
-
-/** 每件袍只分配一次姿态端点；只在坐/站过渡时更新顶点，标准、魂影、回放材质共用同一真实轮廓。 */
-function robeDrape(geo: THREE.BufferGeometry, s: number): (bend: number) => void {
-  const p = geo.attributes.position as THREE.BufferAttribute;
-  p.setUsage(THREE.DynamicDrawUsage);
-  const rest = new Float32Array(p.array), seated = new Float32Array(rest.length);
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const t = (0.1 - y / s) / 0.96;
-    const front = THREE.MathUtils.smoothstep(-z / Math.max(s * 0.001, Math.hypot(x, z)), -0.85, -0.15);
-    const lap = Math.sin(Math.min(1, t / 0.45) * Math.PI / 2);
-    const frontY = t < 0.45 ? 0.1 - t * 0.075 : 0.06625 - (t - 0.45) * 0.9;
-    seated[i * 3] = x * (1 - 0.06 * t + 0.32 * Math.exp(-Math.pow((t - 0.18) / 0.2, 2)));
-    seated[i * 3 + 1] = ((0.1 - 0.6 * t) * (1 - front) + frontY * front) * s;
-    seated[i * 3 + 2] = z * (1 - 0.18 * t) - front * 0.36 * s * lap;
-  }
-  let previous = -1;
-  return bend => {
-    if (Math.abs(bend - previous) < 1e-5) return;
-    previous = bend;
-    for (let i = 0; i < rest.length; i++) p.array[i] = rest[i]! + (seated[i]! - rest[i]!) * bend;
-    p.needsUpdate = true;
-    geo.computeVertexNormals();
-    geo.computeBoundingBox();
-    geo.computeBoundingSphere();
-  };
-}
-
-/** 下身构建器（旧版）：长袍角色是一整件 Lathe 袍（坐下时形变盖住大腿）；其余是骨盆 + 腰带；两条腿与鞋。 */
 export function buildLower(ctx: BuildCtx): RegionResult {
-  const { spec, s } = ctx;
-  const bw = ctx.build.w, bd = ctx.build.d;
-  const parts: RigidPart[] = [];
-  let robe: THREE.BufferGeometry | null = null;
-  if (spec.robe) {
-    robe = ctx.track(robeGeo(s, bw).clone());
-    parts.push({ kind: 'rigid', name: 'robe', joint: 'hips', geo: robe, slot: 'robe' });
+  const st = lowerStyleOf(ctx);
+  const s = ctx.s;
+  const parts: SkinnedPiece[] = [];
+  let update: RegionResult['update'];
+  const W0 = ctx.seams.WAIST;
+  const c = W0.centre;
+  const robeLike = st.bottom === 'robe' || st.bottom === 'qipao_skirt';
+  if (robeLike) {
+    let top24: Float32Array = Float32Array.from(W0.pos);
+    if (st.bottom === 'robe') {
+      // 布腰带：WAIST 往下 5cm；长袍从带子下沿开始
+      const aW = W0.pos[0]! - c[0], bW = W0.pos[18 * 3 + 2]! - c[2], bellyW = (c[2] - W0.pos[6 * 3 + 2]!) / bW - 1;
+      top24 = asymRing(c[0], c[1] - 0.05 * s, c[2], aW * 1.03, bW * 1.03, bW * 1.04, 24, 2.9, bellyW * 1.05);
+      parts.push(...buildSash(ctx, top24));
+    }
+    const robe = buildRobe(ctx, st, top24);
+    parts.push(robe.piece);
+    update = robe.update;
+  } else if (st.belt) {
+    const fr = legFrame(ctx);
+    const beltH = 0.036 * s;
+    const tr = buildTrousers(ctx, st, beltH / (c[1] - fr.ySplit));
+    // 裤子顶圈 = 皮带下沿
+    parts.push(tr, ...buildBelt(ctx, ringAtY(tr.geo, c[1] - beltH)));
   } else {
-    parts.push({ kind: 'rigid', name: 'pelvis', joint: 'hips', geo: pelvisGeo(s, bw, bd), slot: 'pants' });
-    parts.push({ kind: 'rigid', name: 'belt', joint: 'hips', geo: beltGeo(s, bw, bd), slot: 'belt' });
+    parts.push(buildTrousers(ctx, st, 0));
   }
-  // 长袍下保留正常的腿；坐姿由整片袍摆覆盖，不再用两个外露筒子表示布料。
-  for (const side of ['L', 'R'] as const) {
-    const hp = side === 'L' ? 'hipL' : 'hipR';
-    const kn = side === 'L' ? 'kneeL' : 'kneeR';
-    parts.push({ kind: 'rigid', name: `thigh${side}`, joint: hp, geo: contouredLimb(s, 'thigh', bw * (spec.robe ? 0.74 : 1)), slot: 'pants' });
-    parts.push({ kind: 'rigid', name: `shin${side}`, joint: kn, geo: contouredLimb(s, 'shin', bw * (spec.robe ? 0.8 : 1)), slot: 'pants' });
-    // char2：鞋挂在踝关节上（踝在膝下 layout 的距离），补偿位移后与原来挂在膝上一模一样
-    const an = side === 'L' ? 'ankleL' : 'ankleR';
-    parts.push({ kind: 'rigid', name: `shoe${side}`, joint: an, geo: shoeGeo(0.1 * s, 0.075 * s, 0.26 * s, -0.455 * s, -0.19 * s), slot: 'shoes', position: [0, -ctx.layout.local[an][1], 0] });
+  parts.push(...buildShoes(ctx, st.shoes));
+  if (UPPER_LEGACY) parts.push(legacyBridge(ctx, robeLike ? 'robe' : 'torso'));
+  return { parts, ...(update ? { update } : {}) };
+}
+
+/** 几何里 y ≈ yRow 的那一圈 24 点（loftRings 布局，每行 25 点）。 */
+function ringAtY(geo: THREE.BufferGeometry, yRow: number): Float32Array {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const N = 24, Wd = N + 1;
+  for (let j = 0; j * Wd < pos.count; j++) {
+    if (Math.abs(pos.getY(j * Wd) - yRow) < 1e-5) {
+      const out = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) out.set([pos.getX(j * Wd + i), pos.getY(j * Wd + i), pos.getZ(j * Wd + i)], i * 3);
+      return out;
+    }
   }
-  const drape = robe ? robeDrape(robe, s) : null;
-  return { parts, ...(drape ? { update: st => drape(st.bend) } : {}) };
+  throw new Error(`lower: no trouser ring at y ${yRow.toFixed(4)}`);
+}
+
+/** 旧版上身的过渡腰：WAIST → 旧躯干下沿（spine 关节高，半宽 0.162s·bw、半深 0.104s·bd）再往上 1.2cm，外沿略大，盖住缝。 */
+function legacyBridge(ctx: BuildCtx, slot: 'torso' | 'robe'): SkinnedPiece {
+  const s = ctx.s, c = ctx.seams.WAIST.centre;
+  const bw = ctx.build.w, bd = ctx.build.d, belly = ctx.build.belly;
+  const ySp = ctx.layout.bind.spine[1];
+  const W0 = Float32Array.from(ctx.seams.WAIST.pos);
+  const ring = (y: number) => asymRing(c[0], y, c[2], 0.167 * s * bw, 0.109 * s * bd + belly * s * 0.6, 0.109 * s * bd, 24, 3);
+  const geo = ctx.track(loftRings([W0, inflateRing(ring((ySp + c[1]) / 2), 0.001 * s), ring(ySp + 0.012 * s)], { capEnd: [c[0], ySp + 0.012 * s, c[2]] }));
+  setSkin(geo, p => W([['hips', 0.65 - 0.15 * Math.min(1, Math.max(0, (p.y - c[1]) / (ySp - c[1])))], ['spine', 0.35 + 0.15 * Math.min(1, Math.max(0, (p.y - c[1]) / (ySp - c[1])))]]));
+  snapRing(geo, 0, ctx.seams.WAIST, { dupSeam: true });
+  return { kind: 'skinned', name: 'legacyBridge', slot, geo, own: true, weld: false };
 }

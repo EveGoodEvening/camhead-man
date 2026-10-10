@@ -105,7 +105,8 @@ export const SHOTS: readonly ShotDef[] = [
     temp: { [TEMP_SHOT]: 2 },
     view: { cam: WONTON_SHOT_CAM },
     keys: [NPC.ZHOU],
-    highlight: 0.55,
+    // char2：亮核同样只有两粒烛芯，P99.5 在 0.46–0.48 之间跳（颗粒噪声），贴着 0.47 的线：放到 0.5
+    highlight: 0.5,
   },
   {
     id: 'shot.r1.fin_ch1_mao', label: '卯时·CH1 固定机位：门口空了，粉笔叉还在，东边发白',

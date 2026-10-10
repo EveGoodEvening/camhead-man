@@ -4,6 +4,7 @@
 // 每个写 flag 的处理都先查前置、不满足就给专属反馈且不写 flag（ARCH §11.5 第 2 条）；先写 flag 再开对话/过场（第 9 条）。
 
 import * as THREE from 'three';
+import { headShell } from '../../../rigs/human/head';
 import type { AreaContext } from '../../../core/area';
 import type { V3 } from '../../../core/types';
 import type { GameApi, Handler } from '../../../game/effects';
@@ -112,9 +113,9 @@ function attachSmile(ctx: AreaContext, root: THREE.Object3D): THREE.Mesh | null 
   const tex = ctx.track(smileFaceTexture());
   const mat = ctx.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   mat.userData.tempC = TEMP_C.yin;
-  // 纬度范围按人偶自己的五官对齐（M4 第 2 轮：原来 0.5–2.0 rad，整张笑脸比人偶的眼睛、嘴高出一截，推近时两张脸叠在一起；
-  // 显示笑脸时人偶自己的五官贴图收起来，见 stage.ts 的 sync）
-  const geo = ctx.track(new THREE.SphereGeometry(0.1015, 16, 12, Math.PI * 1.5 - 0.95, 1.9, 0.53, 2.18).scale(0.92 * 1.06, 1.12 * 1.06, 1.06));
+  // char2：贴着雕出来的头（含鼻子）往外 3mm。射线从头里偏后的一点打出去（smileFaceTexture 的眼在 0.472、嘴在 0.69，挨得近），
+  // 经纬范围让笑脸的眼、嘴正好落在人偶自己的眼、嘴上（显示笑脸时人偶自己的五官贴图收起来，见 stage.ts 的 sync）
+  const geo = ctx.track(headShell(head, { lon: [Math.PI * 1.5 - 0.71, Math.PI * 1.5 + 0.71], lat: [0.4, 2.65], offset: 0.003, centre: [0, -0.005, 0.045], segments: [18, 16] }));
   const face = new THREE.Mesh(geo, mat);
   face.name = 'fin.zhou.smile';
   face.renderOrder = 12;

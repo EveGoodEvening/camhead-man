@@ -7,6 +7,7 @@
 // 帧内的小道具（擦镜头的袖子、垫脚的凳子、00:30 那段仰头说话、天亮）在 scene.onBeforeRender 里按带子时刻 tc 摆好（three 在投影场景前调用它）。
 
 import * as THREE from 'three';
+import { headShell } from '../../../rigs/human/head';
 import type { V3, Pose } from '../../../core/types';
 import type { AreaContext } from '../../../core/area';
 import type { ReplayActorKey } from '../../../game/replay';
@@ -342,7 +343,7 @@ function buildTapeScene(ctx: AreaContext, scene: THREE.Scene, kit: TapeKit): voi
   const faceMat = kit.track(new THREE.MeshStandardMaterial({
     map: faceTex, emissive: 0x222222, emissiveMap: faceTex, transparent: true, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   }));
-  const faceGeo = kit.track(new THREE.SphereGeometry(0.1015, 16, 10, Math.PI * 1.5 - 0.95, 1.9, 0.5, 1.5).scale(0.92 * 1.05, 1.12 * 1.05, 1.05));
+  // char2：贴片贴着雕出来的头（含鼻子）往外 3mm；经纬范围让 tapeFaceTexture 的眼（画布 0.455）、嘴（0.725）落在人偶的眼、嘴上
   let facesOn = false;
   const attachFaces = (): void => {
     facesOn = true;
@@ -350,6 +351,7 @@ function buildTapeScene(ctx: AreaContext, scene: THREE.Scene, kit: TapeKit): voi
       if (o.name !== GHOST.ZHOU_2023) return;
       const head = o.getObjectByName('head');
       if (!head || head.getObjectByName('tape.face')) return;
+      const faceGeo = kit.track(headShell(head, { lon: [Math.PI * 1.5 - 1.05, Math.PI * 1.5 + 1.05], lat: [0.31, 2.84], offset: 0.0035, segments: [18, 16] }));
       const f = new THREE.Mesh(faceGeo, faceMat);
       f.name = 'tape.face';
       f.renderOrder = 1;

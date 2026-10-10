@@ -3,7 +3,7 @@
 // 跑 §12.4 列出的回归例中能从 API 外部验证的部分，然后自动发现并运行 scripts/selftest/*.mjs（各 WP 的自测，默认导出 run(h)）。
 //
 // 用法：npm run build && node scripts/core.mjs [--only=wpN] [--skip-api] [--skip-selftests] [--case=<子串>] [--quality=low]
-//   --only=wpN   只跑 scripts/selftest/wpN.mjs（ARCH §15.2 共同完成定义）
+//   --only=wpN   只跑 scripts/selftest/wpN.mjs（ARCH §15.2 共同完成定义）；可逗号分隔几个：--only=wp2,m1c,m1d,char2
 // 沙盒夹具的 id 与位置取自各 WP 的 src/areas/dev/wpN.ts（见下方 FIX 表的注释）；位置能从 aimAt 现取的都现取，
 // 夹具缺失时对应用例报 “fixture missing”，M1c 整合时对齐。
 
@@ -615,12 +615,12 @@ async function runApi(h, filter) {
 
 async function runSelftests(h, only) {
   const dir = path.join(HERE, 'selftest');
-  // 各 WP 的 wpN.mjs，加上整合代理的 m1c.mjs（M1c 起）、m1d.mjs（M1d 起）与 m4.mjs（M4 第 2 轮）
-  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /^(wp\d+|m1[cd]|m4)\.mjs$/.test(f)).sort() : [];
+  // 各 WP 的 wpN.mjs，加上整合代理的 m1c.mjs（M1c 起）、m1d.mjs（M1d 起）、m4.mjs（M4 第 2 轮）与 char2.mjs（人物重做）
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /^(wp\d+|m1[cd]|m4|char2)\.mjs$/.test(f)).sort() : [];
   console.log(`== scripts/selftest/*.mjs（${files.join(' ')}）`);
   for (const f of files) {
     const name = f.replace(/\.mjs$/, '');
-    if (only && name !== only) continue;
+    if (only && !only.split(',').includes(name)) continue;
     const t0 = Date.now();
     try {
       await fresh(h);

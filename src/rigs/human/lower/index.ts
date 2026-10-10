@@ -7,6 +7,13 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { cached, contouredLimb, flipLatheV, q, squircleLoft } from '../shared';
 import type { BuildCtx, RegionResult, RigidPart } from '../types';
 
+/**
+ * true = 这里还是 WP0 搬来的旧版构建器（按成年人关节写死）。三个区域（head/upper/lower）都是 true 时，assemble 用旧版关节布局
+ * （儿童、土地也按成年人数值摆），外观与拆分前逐像素一致。换上新构建器（按 ctx.layout/ctx.land/ctx.seams 建）后改成 false：
+ * 只要有一个区域是 false，全部人偶就用 profile 的关节布局（profile.ts jointLayout）。
+ */
+export const REGION_LEGACY = true;
+
 /** 鞋楦：圆趾、收腰、脚背与低鞋跟；鞋底 UV 在下沿，鞋面与鞋底仍共用一个网格。 */
 function shoeGeo(w: number, h: number, len: number, y: number, zFront: number): THREE.BufferGeometry {
   return cached(`shoe:${q(w)}:${q(h)}:${q(len)}:${q(y)}:${q(zFront)}`, () => {
@@ -112,7 +119,9 @@ export function buildLower(ctx: BuildCtx): RegionResult {
     const kn = side === 'L' ? 'kneeL' : 'kneeR';
     parts.push({ kind: 'rigid', name: `thigh${side}`, joint: hp, geo: contouredLimb(s, 'thigh', bw * (spec.robe ? 0.74 : 1)), slot: 'pants' });
     parts.push({ kind: 'rigid', name: `shin${side}`, joint: kn, geo: contouredLimb(s, 'shin', bw * (spec.robe ? 0.8 : 1)), slot: 'pants' });
-    parts.push({ kind: 'rigid', name: `shoe${side}`, joint: kn, geo: shoeGeo(0.1 * s, 0.075 * s, 0.26 * s, -0.455 * s, -0.19 * s), slot: 'shoes' });
+    // char2：鞋挂在踝关节上（踝在膝下 layout 的距离），补偿位移后与原来挂在膝上一模一样
+    const an = side === 'L' ? 'ankleL' : 'ankleR';
+    parts.push({ kind: 'rigid', name: `shoe${side}`, joint: an, geo: shoeGeo(0.1 * s, 0.075 * s, 0.26 * s, -0.455 * s, -0.19 * s), slot: 'shoes', position: [0, -ctx.layout.local[an][1], 0] });
   }
   const drape = robe ? robeDrape(robe, s) : null;
   return { parts, ...(drape ? { update: st => drape(st.bend) } : {}) };

@@ -8,6 +8,7 @@ import { FX_TIME } from '../fx/ghostMaterials';
 import { PALETTE } from '../data/palette';
 import { TEMP_C } from '../data/render';
 import { createHumanoidInternal } from '../rigs/humanoid';
+import { bakeSkinned } from '../rigs/human/shared';
 import { paintTexture } from './canvas';
 import { merge } from './geom';
 import { rng, range } from './rng';
@@ -122,9 +123,17 @@ export function createColdTrace(shape: 'sitting' | 'standing' | 'crouching'): TH
   h.update(0, 0);
   h.root.updateWorldMatrix(true, true);
   const meshes: THREE.Mesh[] = [];
+  const baked: THREE.Mesh[] = [];
   h.root.traverse(o => {
     const m = o as THREE.Mesh;
-    if (m.isMesh) meshes.push(m);
+    if (!m.isMesh) return;
+    // char2：蒙皮网格先按当前姿势烘成普通几何（merge 只认 matrixWorld，不会蒙皮）
+    if ((m as THREE.SkinnedMesh).isSkinnedMesh) {
+      const b = new THREE.Mesh(bakeSkinned(m as THREE.SkinnedMesh), m.material);
+      m.matrixWorld.decompose(b.position, b.quaternion, b.scale);
+      baked.push(b);
+      meshes.push(b);
+    } else meshes.push(m);
   });
   const mat = new THREE.MeshBasicMaterial({ color: PALETTE.NIGHT });
   mat.userData.tempC = TEMP_C.cold;
@@ -134,6 +143,7 @@ export function createColdTrace(shape: 'sitting' | 'standing' | 'crouching'): TH
   merged.scale.set(1.05, 1.0, 1.08);
   merged.userData.tempC = TEMP_C.cold;
   h.dispose();
+  for (const b of baked) b.geometry.dispose();
   const g = new THREE.Group();
   g.name = 'coldTrace';
   g.add(merged);

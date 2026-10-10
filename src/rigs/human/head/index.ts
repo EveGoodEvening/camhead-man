@@ -11,6 +11,13 @@ import { rng, range } from '../../../kit/rng';
 import { cached, limbGeo, q } from '../shared';
 import type { BuildCtx, ExtraObject, FaceOpts, RegionResult, RigidPart } from '../types';
 
+/**
+ * true = 这里还是 WP0 搬来的旧版构建器（按成年人关节写死）。三个区域（head/upper/lower）都是 true 时，assemble 用旧版关节布局
+ * （儿童、土地也按成年人数值摆），外观与拆分前逐像素一致。换上新构建器（按 ctx.layout/ctx.land/ctx.seams 建）后改成 false：
+ * 只要有一个区域是 false，全部人偶就用 profile 的关节布局（profile.ts jointLayout）。
+ */
+export const REGION_LEGACY = true;
+
 /** 头部基础椭球的半轴：x 0.92、y 1.12、z 1（× r），在此基础上塑造面部轮廓。 */
 const HEAD_AX = [0.92, 1.12, 1] as const;
 

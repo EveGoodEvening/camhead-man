@@ -9,6 +9,13 @@ import { cached, contouredLimb, flipLatheV, limbGeo, loftPoint, q, squircleLoft,
 import type { BuildCtx, HumanoidInternal, RegionResult, RigidPart } from '../types';
 
 /**
+ * true = 这里还是 WP0 搬来的旧版构建器（按成年人关节写死）。三个区域（head/upper/lower）都是 true 时，assemble 用旧版关节布局
+ * （儿童、土地也按成年人数值摆），外观与拆分前逐像素一致。换上新构建器（按 ctx.layout/ctx.land/ctx.seams 建）后改成 false：
+ * 只要有一个区域是 false，全部人偶就用 profile 的关节布局（profile.ts jointLayout）。
+ */
+export const REGION_LEGACY = true;
+
+/**
  * 短袖袖筒（M4）：顶上是圆肩（半球封口），往下外撇、下口敞开（不是胶囊的圆底），长到上臂中段。
  * 顶端（肩关节）在原点，沿 -y 长 len。
  */
@@ -169,7 +176,9 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
       parts.push({ kind: 'rigid', name: `upperArm${side}`, joint: sh, geo: contouredLimb(s, 'upper', bw), slot: sl });
       parts.push({ kind: 'rigid', name: `forearm${side}`, joint: el, geo: contouredLimb(s, 'forearm', bw), slot: sl });
       parts.push({ kind: 'rigid', name: `cuff${side}`, joint: el, geo: bandGeo(0.035 * s * bw, 0.035 * s * bw, 0.023 * s), slot: spec.robe ? sl : 'hem', position: [0, -0.245 * s, 0] });
-      parts.push({ kind: 'rigid', name: `hand${side}`, joint: el, geo: handGeo(s, -0.29 * s), slot: 'skin', rotation: [0, handRy, 0] });
+      // char2：手挂在腕关节上（腕在肘下 layout 的距离），补偿位移后与原来挂在肘上一模一样
+      const wr = side === 'L' ? 'wristL' : 'wristR';
+      parts.push({ kind: 'rigid', name: `hand${side}`, joint: wr, geo: handGeo(s, -0.29 * s), slot: 'skin', position: [0, -ctx.layout.local[wr][1], 0], rotation: [0, handRy, 0] });
     } else {
       // 袖筒：圆肩 + 外撇的敞口筒，长到上臂中段；袖口压一道深色边
       parts.push({ kind: 'rigid', name: `sleeve${side}`, joint: sh, geo: sleeveGeo(armR * 1.5, armR * 1.62, 0.21 * s), slot: sl, position: [0, 0.012 * s, 0] });

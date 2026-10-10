@@ -404,7 +404,8 @@ registerSelftest('wp2.characters', () => {
   zs.update(1 / 60, 0);
   r.t("zhou 'slump' + sit：上身趴下去", zs.joints.spine.rotation.x < -0.5);
   // M4：Lathe 部件（短袖袖筒、长袍）法线朝外——轮廓自上而下给点时整件内外翻转，从外面看穿到胳膊/小腿（ARCH §16 #39）
-  const outward = (root: THREE.Object3D, name: string): number => {
+  // char2 WP0：蒙皮人身的袖子是两只袖子合并的 'sleeves'（人偶根空间，绕各自的肩轴量）；旧版是挂在肩上的 'sleeveL'（绕自己的轴）
+  const outward = (root: THREE.Object3D, name: string, axisX: (x: number) => number = () => 0): number => {
     let mesh: THREE.Mesh | null = null;
     root.traverse(o => { if (!mesh && o.name === name && (o as THREE.Mesh).isMesh) mesh = o as THREE.Mesh; });
     if (!mesh) return -1;
@@ -412,14 +413,16 @@ registerSelftest('wp2.characters', () => {
     const pos = g.attributes.position as THREE.BufferAttribute, nor = g.attributes.normal as THREE.BufferAttribute;
     let n = 0, good = 0;
     for (let i = 0; i < pos.count; i++) {
-      const rx = pos.getX(i), rz = pos.getZ(i);
+      const rx = pos.getX(i) - axisX(pos.getX(i)), rz = pos.getZ(i);
       if (Math.hypot(rx, rz) < 1e-3) continue;
       n++;
       if (rx * nor.getX(i) + rz * nor.getZ(i) > 0) good++;
     }
     return n > 0 ? good / n : -1;
   };
-  const zo = outward(zl.root, 'sleeveL'), ro = outward(tudi.root, 'robe');
+  const shX = Math.abs(zl.joints.shoulderR.position.x);
+  const skinnedSleeves = !!zl.root.getObjectByName('sleeves');
+  const zo = skinnedSleeves ? outward(zl.root, 'sleeves', x => Math.sign(x) * shX) : outward(zl.root, 'sleeveL'), ro = outward(tudi.root, 'robe');
   r.t('短袖袖筒、长袍的法线朝外（Lathe 轮廓自下而上）', zo > 0.95 && ro > 0.95, `sleeve ${zo.toFixed(2)} robe ${ro.toFixed(2)}`);
   for (const c of [zr, zl, wm, tudi, lo, lu, wang, zs]) c.dispose();
   return r.done();

@@ -17,6 +17,11 @@ import { blotch, canvasToTexture, createCanvas, shade, waterStain } from '../kit
 import { rng, range } from '../kit/rng';
 import { FONT_STACK } from '../kit/text';
 import { paperGrain } from './accessories';
+import { MeshBuilder } from './crowdpaper/meshkit';
+import {
+  collarBand, faceCard, fourSectors, headShell, headShellRows, melonCap, paperHand, pleatTube, sectorLoft, shellFrontZ, wholeRing,
+  type LoftRow, type UvRect,
+} from './crowdpaper/paperGeo';
 
 /** breathing：黄三爷面具。基础脸贴图不变（与同 seed 摊主逐像素一致）；另外生成高清脸贴图（嘴部水渍与卷边）与只在高清贴图生效时可见的鼓瘪小平面 */
 export interface PaperOpts { kind: 'boy' | 'vendor'; height?: number; seed?: number; lanternText?: string; breathing?: boolean }
@@ -42,6 +47,8 @@ const R = {
   jacketFront: [640, 0, 192, 160], jacketBack: [832, 0, 192, 160], jacketSide: [640, 160, 96, 96],
   sleeve: [736, 160, 128, 192], hand: [864, 160, 64, 64], hair: [928, 160, 96, 96], skin: [864, 224, 64, 64],
   hat: [640, 256, 96, 96], plain: [736, 352, 64, 32],
+  // char2：头壳（黑发帽、中分）、立领、折边里子（暗）——都在原来空着的 384–512 行
+  shell: [0, 384, 256, 128], collar: [256, 384, 128, 32], lip: [384, 384, 64, 32],
 } as const satisfies Record<string, Rect>;
 /** 脸格子：画布下半，4 列 × 2 行，每格 256²。 */
 const FACE_CELLS = 8;
@@ -101,6 +108,41 @@ function trimPattern(g: CanvasRenderingContext2D, r: Rect, trim: string, dense: 
     g.textBaseline = 'middle';
     g.fillText('寿', cx, cy + 1);
   }
+  g.restore();
+}
+
+/** 竹篾骨架的一点暗示：格子最下沿一道深色细条 + 一道纸的毛边。 */
+function bambooEdge(g: CanvasRenderingContext2D, r: Rect, h = 4): void {
+  g.fillStyle = '#3a2a16';
+  g.fillRect(r[0], r[1] + r[3] - h, r[2], h);
+  g.fillStyle = 'rgba(240,230,210,0.35)';
+  g.fillRect(r[0], r[1] + r[3] - h - 1, r[2], 1);
+}
+
+/** 纸扎头壳：黑发帽，顶上中分（u = 0.5 是正前），两边往下梳的细纹。 */
+function paintShell(g: CanvasRenderingContext2D, r: Rect, hair: string, seed: number): void {
+  fillPaper(g, r, hair, seed);
+  const rr = rng(seed);
+  g.save();
+  g.beginPath();
+  g.rect(r[0], r[1], r[2], r[3]);
+  g.clip();
+  const cx = r[0] + r[2] * 0.5;
+  // 梳纹：从中缝往两边、往下的弧线
+  g.lineWidth = 1;
+  for (let i = 0; i < 70; i++) {
+    const side = i % 2 ? 1 : -1;
+    const y0 = r[1] + range(rr, 0, r[3] * 0.4);
+    const len = range(rr, 0.15, 0.5) * r[2];
+    g.strokeStyle = `rgba(${range(rr, 60, 90) | 0},${range(rr, 60, 90) | 0},${range(rr, 66, 96) | 0},${range(rr, 0.25, 0.5)})`;
+    g.beginPath();
+    g.moveTo(cx + side * range(rr, 1, 4), y0);
+    g.quadraticCurveTo(cx + side * len * 0.5, y0 + range(rr, 4, 14), cx + side * len, y0 + range(rr, 18, 50));
+    g.stroke();
+  }
+  // 中分：一道浅色的头路
+  g.fillStyle = 'rgba(150,120,100,0.55)';
+  g.fillRect(cx - 1, r[1], 2, r[3] * 0.42);
   g.restore();
 }
 
@@ -270,6 +312,18 @@ function paintVendorAtlas(scale: number, hiCell: number): THREE.CanvasTexture {
   g.arc(R.hat[0] + 48, R.hat[1] + 48, 12, 0, Math.PI * 2);
   g.fill();
   fillPaper(g, R.plain, '#DCD2BE', 14);
+  // char2：头壳（黑发帽：梳纹、中分）、立领（马褂色 + 金边）、折边里子（暗）；袍脚与袖口的竹篾骨架（深色细条）
+  gutters(g, [[R.shell, '#141414'], [R.collar, VENDOR.jacket], [R.lip, shade(VENDOR.jacket, 0.4)]]);
+  paintShell(g, R.shell, '#141414', 15);
+  fillPaper(g, R.collar, VENDOR.jacket, 16);
+  g.fillStyle = VENDOR.trim;
+  g.fillRect(R.collar[0], R.collar[1] + 3, R.collar[2], 3);
+  g.fillRect(R.collar[0], R.collar[1] + R.collar[3] - 6, R.collar[2], 3);
+  fillPaper(g, R.lip, shade(VENDOR.jacket, 0.4), 17);
+  bambooEdge(g, R.robeFront);
+  bambooEdge(g, R.robeBack);
+  bambooEdge(g, R.robeSide);
+  bambooEdge(g, R.sleeve, 3);
   for (let i = 0; i < FACE_CELLS; i++) {
     const c = cellRect(i);
     paintFace(g, c[0], c[1], c[2], i, i === hiCell);
@@ -311,32 +365,6 @@ const uvRect = (r: Rect): [number, number, number, number] => [
   (r[0] + UV_INSET) / ATLAS, 1 - (r[1] + r[3] - UV_INSET) / ATLAS, (r[2] - 2 * UV_INSET) / ATLAS, (r[3] - 2 * UV_INSET) / ATLAS,
 ];
 
-/** 截头方盒（纸扎的袍、褂、袖子）：前/后/侧/顶底各映到贴图集的格子。原点在底面中心。 */
-function paperBox(wB: number, dB: number, wT: number, dT: number, h: number, front: Rect, back: Rect, side: Rect, cap: Rect = R.plain): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(1, h, 1);
-  const p = g.attributes.position as THREE.BufferAttribute;
-  const uv = g.attributes.uv as THREE.BufferAttribute;
-  for (let i = 0; i < p.count; i++) {
-    const top = p.getY(i) > 0;
-    p.setXYZ(i, p.getX(i) * (top ? wT : wB), p.getY(i) + h / 2, p.getZ(i) * (top ? dT : dB));
-    const face = Math.floor(i / 4); // px nx py ny pz nz
-    const rr = face === 5 ? front : face === 4 ? back : face <= 1 ? side : cap;
-    const [u0, v0, uw, vh] = uvRect(rr);
-    uv.setXY(i, u0 + uv.getX(i) * uw, v0 + uv.getY(i) * vh);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
-function place(g: THREE.BufferGeometry, pos: V3, rot?: V3): THREE.BufferGeometry {
-  const m = new THREE.Matrix4().compose(
-    new THREE.Vector3(pos[0], pos[1], pos[2]),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler((rot?.[0] ?? 0) * DEG2RAD, (rot?.[1] ?? 0) * DEG2RAD, (rot?.[2] ?? 0) * DEG2RAD)),
-    new THREE.Vector3(1, 1, 1),
-  );
-  return g.applyMatrix4(m);
-}
-
 /** 把若干几何合成一份（position/normal/uv + aFace/aCell 常量属性）。 */
 function mergeParts(parts: { geo: THREE.BufferGeometry; face: number }[]): THREE.BufferGeometry {
   let n = 0, ni = 0;
@@ -368,40 +396,74 @@ function mergeParts(parts: { geo: THREE.BufferGeometry; face: number }[]): THREE
   return out;
 }
 
-/** 纸扎摊主各部件（单位高度 1.55m 的比例，按 k 缩放）：身体（不含脸）与脸平面。 */
-function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.BufferGeometry; mouth: V3 } {
-  const s = k;
-  const body: THREE.BufferGeometry[] = [];
-  // 长袍（下摆外撇）
-  body.push(place(paperBox(0.46 * s, 0.3 * s, 0.36 * s, 0.21 * s, 0.9 * s, R.robeFront, R.robeBack, R.robeSide), [0, 0, 0]));
-  // 马褂（上身）
-  body.push(place(paperBox(0.38 * s, 0.22 * s, 0.34 * s, 0.19 * s, 0.3 * s, R.jacketFront, R.jacketBack, R.jacketSide), [0, 0.9 * s, 0]));
-  // 宽袖：从肩膀斜着垂下，袖口外撇；袖口里一只纸手
-  for (const sx of [-1, 1]) {
-    body.push(place(paperBox(0.15 * s, 0.14 * s, 0.1 * s, 0.1 * s, 0.46 * s, R.sleeve, R.sleeve, R.sleeve), [sx * 0.24 * s, 0.72 * s, -0.03 * s], [8, 0, sx * 10]));
-    body.push(place(paperBox(0.06 * s, 0.04 * s, 0.06 * s, 0.04 * s, 0.09 * s, R.hand, R.hand, R.hand), [sx * 0.27 * s, 0.64 * s, -0.05 * s], [8, 0, sx * 8]));
+/** 图集格子 → (s, t) ∈ [0,1]²（t = 0 在格子顶上）的 UV 映射（夹在格子里，不会采到隔壁）。 */
+const rectUv = (r: Rect): UvRect => {
+  const [u0, v0, uw, vh] = uvRect(r);
+  return (s, t) => [u0 + Math.min(1, Math.max(0, s)) * uw, v0 + (1 - Math.min(1, Math.max(0, t))) * vh];
+};
+/** 脸格子 0 里 (u, v)（v 向上）→ UV。 */
+const cellUv = (r: Rect) => {
+  const [u0, v0, uw, vh] = uvRect(r);
+  return (u: number, v: number): [number, number] => [u0 + u * uw, v0 + v * vh];
+};
+/** 格子里画的脸椭圆（paintFace：中心 (128,138)、半径 (106,118)，256 像素）：脸纸就剪成略小一圈的这个形状（边缘不带黑底），下沿收在格子里。 */
+const FACE_ELL = { cu: 0.5, cv: 1 - 138 / 256, ru: (106 / 256) * 0.965, rv: 0.442 } as const;
+/** 摊主（1.58m，k = 1）的脸纸矩形与头壳中心。 */
+const V_CARD = { cy: 1.385, w: 0.205, h: 0.245 } as const;
+
+/**
+ * 纸扎摊主各部件（单位高度 1.58m 的比例，按 k 缩放）：身体（不含脸）与脸纸。
+ * char2：圆头壳 + 椭圆脸纸、手风琴褶长袍、马褂、立领、褶袖 + 剪纸手、六瓣瓜皮帽（crowdpaper/paperGeo.ts）。
+ */
+function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.BufferGeometry; mouth: V3; shell: LoftRow[] } {
+  const mb = new MeshBuilder();
+  const K = (v: number) => v * k;
+  // 长袍：A 字、12 道褶
+  const robe: LoftRow[] = [
+    [0.004, 0.245, 0.165], [0.2, 0.23, 0.153], [0.42, 0.212, 0.139], [0.64, 0.197, 0.126], [0.84, 0.186, 0.116], [0.93, 0.181, 0.111],
+  ].map(([y, a, b]) => ({ y: K(y!), a: K(a!), bf: K(b!), bb: K(b! * 1.04), n: 2.4 }));
+  sectorLoft(mb, robe, fourSectors(rectUv(R.robeFront), rectUv(R.robeBack), rectUv(R.robeSide)), {
+    group: 0, pleats: 12, amp: K(0.006), inside: y => new THREE.Vector3(0, y, 0),
+  });
+  // 马褂：光滑放样（前后片 + 两侧），下摆往里折一圈
+  const jacket: LoftRow[] = [
+    [0.86, 0.215, 0.145], [0.95, 0.197, 0.131], [1.05, 0.189, 0.123], [1.13, 0.184, 0.118], [1.185, 0.158, 0.1], [1.215, 0.088, 0.068],
+  ].map(([y, a, b]) => ({ y: K(y!), a: K(a!), bf: K(b!), bb: K(b! * 1.05), n: 2.7 }));
+  sectorLoft(mb, jacket, fourSectors(rectUv(R.jacketFront), rectUv(R.jacketBack), rectUv(R.jacketSide), 0.9, [8, 8, 4]), {
+    group: 1, inside: y => new THREE.Vector3(0, y, 0),
+  });
+  {
+    const hem = jacket[0]!;
+    const inner: LoftRow = { ...hem, y: hem.y + K(0.012), a: hem.a * 0.88, bf: hem.bf * 0.86, bb: hem.bb * 0.86 };
+    sectorLoft(mb, [hem, inner], wholeRing(rectUv(R.lip), 24), { group: 2, inside: y => new THREE.Vector3(0, y - K(0.05), 0) });
   }
-  // 脖子、头盒（后脑与两侧是黑发）
-  body.push(place(paperBox(0.09 * s, 0.08 * s, 0.08 * s, 0.07 * s, 0.07 * s, R.skin, R.skin, R.skin), [0, 1.2 * s, 0]));
-  body.push(place(paperBox(0.2 * s, 0.18 * s, 0.21 * s, 0.18 * s, 0.25 * s, R.hair, R.hair, R.hair, R.hair), [0, 1.26 * s, 0.005 * s]));
-  // 瓜皮帽：八棱帽 + 帽顶红疙瘩
-  const hat = new THREE.CylinderGeometry(0.09 * s, 0.113 * s, 0.07 * s, 8);
-  const hu = hat.attributes.uv as THREE.BufferAttribute;
+  // 立领、脖子
+  collarBand(mb, K(1.2), K(1.248), K(0.084), K(0.074), K(0.074), K(0.065), 0, rectUv(R.collar), 3);
+  sectorLoft(mb, [{ y: K(1.21), a: K(0.047), bf: K(0.045), bb: K(0.047) }, { y: K(1.275), a: K(0.045), bf: K(0.043), bb: K(0.045) }],
+    wholeRing(rectUv(R.skin), 12), { group: 5 });
+  // 褶袖（喇叭口）+ 袖口折边 + 剪纸手
+  for (const sx of [-1, 1]) {
+    const S = new THREE.Vector3(sx * K(0.2), K(1.165), K(0.0)), C = new THREE.Vector3(sx * K(0.268), K(0.665), K(-0.045));
+    const sl = pleatTube(mb, S, C, [0.058, 0.07, 0.084, 0.098, 0.107].map(K), 8, K(0.004), rectUv(R.sleeve), { topCap: true, lip: rectUv(R.lip) });
+    const wrist = sl.end.clone().addScaledVector(sl.T, -K(0.012));
+    paperHand(mb, wrist, new THREE.Vector3(sx * 0.06, -1, -0.12), new THREE.Vector3(sx * 0.55, 0, 1), new THREE.Vector3(-sx, 0, -0.35), k * 1.15, rectUv(R.hand), 10 + (sx > 0 ? 2 : 0));
+  }
+  // 头壳
+  const shell = headShellRows(k, K(V_CARD.cy));
+  headShell(mb, shell, rectUv(R.shell), 6, 24);
+  // 瓜皮帽：帽口压在头顶（脸纸上沿之上）
   const [hu0, hv0, huw, hvh] = uvRect(R.hat);
-  for (let i = 0; i < hu.count; i++) hu.setXY(i, hu0 + hu.getX(i) * huw, hv0 + hu.getY(i) * hvh);
-  body.push(place(hat, [0, 1.545 * s, 0.005 * s]));
-  // 脸：头盒前面的一张平面（格子 0 的 UV；别的格子靠 aCell 偏移）
-  const face = new THREE.PlaneGeometry(0.205 * s, 0.245 * s);
-  face.rotateY(Math.PI); // 法线朝 -z
-  const fu = face.attributes.uv as THREE.BufferAttribute;
-  const [fu0, fv0, fuw, fvh] = uvRect(cellRect(0));
-  // rotateY(π) 后 u=0 在 +x，正好是从正面看的左边：贴图不用翻
-  for (let i = 0; i < fu.count; i++) fu.setXY(i, fu0 + fu.getX(i) * fuw, fv0 + fu.getY(i) * fvh);
-  place(face, [0, 1.385 * s, -0.0955 * s]);
-  return { body, face, mouth: [0, 1.29 * s, -0.098 * s] };
+  const R0 = K(0.13);
+  melonCap(mb, k, K(1.488), 0.112, 0.104, K(0.005), (x, z) => [hu0 + (0.5 + x / (2 * R0)) * huw, hv0 + (0.5 + z / (2 * R0)) * hvh]);
+  const body = [mb.build()];
+  // 脸纸：格子 0 的 UV（别的格子靠 aCell 偏移）
+  const fb = new MeshBuilder();
+  faceCard(fb, shell, { cy: K(V_CARD.cy), w: K(V_CARD.w), h: K(V_CARD.h) }, FACE_ELL, cellUv(cellRect(0)), K(0.0035), { rings: 6, seg: 20 });
+  const face = fb.build();
+  return { body, face, mouth: [0, K(1.29), shellFrontZ(shell, 0, K(1.29)) - K(0.004)], shell };
 }
 
-const vendorGeoCache = new Map<number, { body: THREE.BufferGeometry; face: THREE.BufferGeometry; merged: THREE.BufferGeometry; mouth: V3; height: number }>();
+const vendorGeoCache = new Map<number, { body: THREE.BufferGeometry; face: THREE.BufferGeometry; merged: THREE.BufferGeometry; mouth: V3; height: number; shell: LoftRow[] }>();
 
 /** 纸扎摊主几何（按高度缓存）：body（不含脸）、face（单独）、merged（身体 + 脸，实例化摊主用）。 */
 function vendorGeometry(height: number) {
@@ -415,7 +477,7 @@ function vendorGeometry(height: number) {
   const merged = mergeParts([...parts.body.map(geo => ({ geo, face: 0 })), { geo: parts.face, face: 1 }]);
   for (const g of parts.body) g.dispose();
   parts.face.dispose();
-  const out = { body, face, merged, mouth: parts.mouth, height };
+  const out = { body, face, merged, mouth: parts.mouth, height, shell: parts.shell };
   vendorGeoCache.set(key, out);
   return out;
 }
@@ -469,6 +531,19 @@ function boyAtlas(lanternText: string): THREE.CanvasTexture {
   fillPaper(g, sleeve, '#C0282C', 38);
   g.fillStyle = '#E8C04A';
   g.fillRect(320, 270, 128, 10);
+  bambooEdge(g, sleeve, 3);
+  bambooEdge(g, jacket, 3);
+  bambooEdge(g, jBack, 3);
+  bambooEdge(g, jSide, 3);
+  // char2：头壳（黑发、齐刘海一样的梳纹）、立领（红 + 金边）、折边里子
+  const shellR: Rect = [448, 0, 64, 160], collarR: Rect = [192, 224, 64, 32], lipR: Rect = [128, 224, 64, 32];
+  gutters(g, [[shellR, '#141414'], [collarR, '#C0282C'], [lipR, '#5a1012']], 4);
+  paintShell(g, shellR, '#141414', 39);
+  fillPaper(g, collarR, '#C0282C', 40);
+  g.fillStyle = '#E8C04A';
+  g.fillRect(collarR[0], collarR[1] + 3, collarR[2], 3);
+  g.fillRect(collarR[0], collarR[1] + collarR[3] - 6, collarR[2], 3);
+  fillPaper(g, lipR, '#5a1012', 41);
   // 脸（与摊主同一套画法，格子号固定）
   paintFace(g, 0, 288, 224, 5, false);
   // 童脸的两团更圆的腮红
@@ -591,21 +666,20 @@ function createVendor(o: PaperOpts): PaperRig {
   };
   const patchMat = newPaperMaterial(vendorAtlas());
   ownedMats.push(patchMat);
-  // 嘴部小平面：取脸格子里嘴那一块（格子内 u 0.3–0.7、v 0.12–0.42，脸平面上对应的位置）
-  const fw = 0.205 * height / 1.58, fh = 0.245 * height / 1.58;
-  const pw = fw * 0.4, ph = fh * 0.3;
-  const patchGeo = new THREE.PlaneGeometry(pw, ph);
-  patchGeo.rotateY(Math.PI);
-  const [cu0, cv0, cuw, cvh] = uvRect(cellRect(cellIdx));
-  const pu = patchGeo.attributes.uv as THREE.BufferAttribute;
-  for (let i = 0; i < pu.count; i++) pu.setXY(i, cu0 + (0.3 + pu.getX(i) * 0.4) * cuw, cv0 + (0.12 + pu.getY(i) * 0.3) * cvh);
-  const patchGeoC = withCell(mergeParts([{ geo: patchGeo, face: 0 }]), [0, 0]);
-  patchGeo.dispose();
+  // 嘴部小片：取脸格子里嘴那一块（格子内 u 0.3–0.7、v 0.12–0.42），跟着脸纸的曲面、再往外 1.2mm
+  const k = height / 1.58;
+  const pb = new MeshBuilder();
+  faceCard(pb, vg.shell, { cy: V_CARD.cy * k, w: V_CARD.w * k, h: V_CARD.h * k }, FACE_ELL, cellUv(cellRect(cellIdx)), 0.0035 * k + 0.0012,
+    { sub: [0.3, 0.7, 0.12, 0.42] });
+  const patchSrc = pb.build();
+  patchSrc.computeBoundingBox();
+  const pc = (patchSrc.boundingBox as THREE.Box3).getCenter(new THREE.Vector3());
+  patchSrc.translate(-pc.x, -pc.y, -pc.z);
+  const patchGeoC = withCell(mergeParts([{ geo: patchSrc, face: 0 }]), [0, 0]);
+  patchSrc.dispose();
   const patch = new THREE.Mesh(patchGeoC, patchMat);
   patch.name = 'breathPatch';
-  // 脸平面中心在 1.385k；嘴区中心在格子 v≈0.27 → 离脸中心 (0.27-0.5)·fh
-  const k = height / 1.58;
-  patch.position.set(0, 1.385 * k + (0.27 - 0.5) * fh, -0.0955 * k - 0.0012);
+  patch.position.copy(pc);
   patch.visible = false;
   patch.userData.noBounds = true;
   inner.add(patch);
@@ -626,7 +700,7 @@ function createVendor(o: PaperOpts): PaperRig {
         // 约 0.25Hz、±3% 的一鼓一瘪（ARCH §5.3）
         const k2 = 1 + 0.03 * Math.sin(t * Math.PI * 2 * 0.25);
         patch.scale.set(k2, k2, 1);
-        patch.position.z = -0.0955 * k - 0.0012 - (k2 - 1) * 0.04;
+        patch.position.z = pc.z - (k2 - 1) * 0.04;
       }
     },
     dispose() {
@@ -647,30 +721,61 @@ function createBoy(o: PaperOpts): PaperRig {
   const jacket = U([0, 0, 192, 160]), jBack = U([192, 0, 192, 160]), jSide = U([384, 0, 64, 160]);
   const pants = U([0, 160, 128, 128]), shoe = U([128, 160, 64, 64]), hair = U([192, 160, 64, 64]), hand = U([256, 160, 64, 64]);
   const sleeve = U([320, 160, 128, 128]);
-  const parts: THREE.BufferGeometry[] = [];
+  const shellR = U([448, 0, 64, 160]), collarR = U([192, 224, 64, 32]), lipR = U([128, 224, 64, 32]);
+  const K = (v: number) => v * k;
+  const mb = new MeshBuilder();
+  // 黑布鞋：圆头的小鞋楦（三圈 + 顶）
   for (const sx of [-1, 1]) {
-    parts.push(place(paperBox(0.1 * k, 0.1 * k, 0.1 * k, 0.1 * k, 0.4 * k, pants, pants, pants), [sx * 0.07 * k, 0.05 * k, 0]));
-    parts.push(place(paperBox(0.1 * k, 0.16 * k, 0.1 * k, 0.16 * k, 0.05 * k, shoe, shoe, shoe, shoe), [sx * 0.07 * k, 0, -0.02 * k]));
+    const shoeRows: LoftRow[] = [[0.0, 0.046, 0.08], [0.028, 0.046, 0.08], [0.05, 0.036, 0.066]]
+      .map(([y, a, b]) => ({ y: K(y!), a: K(a!), bf: K(b! * 1.1), bb: K(b! * 0.75), n: 2.6, cx: K(sx * 0.068), cz: K(-0.012) }));
+    sectorLoft(mb, shoeRows, wholeRing(rectUv(shoe), 12), { group: 20 + (sx > 0 ? 1 : 0), inside: y => new THREE.Vector3(K(sx * 0.068), y, K(-0.012)) });
+    const top = shoeRows[2]!;
+    sectorLoft(mb, [top, { ...top, y: top.y + K(0.004), a: top.a * 0.3, bf: top.bf * 0.3, bb: top.bb * 0.3 }], wholeRing(rectUv(shoe), 12),
+      { group: 22, inside: y => new THREE.Vector3(K(sx * 0.068), y - K(0.03), K(-0.012)) });
+    // 绿裤腿：六道褶的纸筒
+    pleatTube(mb, new THREE.Vector3(K(sx * 0.066), K(0.44), 0), new THREE.Vector3(K(sx * 0.068), K(0.04), K(-0.004)), [0.052, 0.05, 0.046].map(K), 6, K(0.003), rectUv(pants));
   }
-  parts.push(place(paperBox(0.38 * k, 0.22 * k, 0.3 * k, 0.18 * k, 0.4 * k, jacket, jBack, jSide), [0, 0.43 * k, 0]));
-  // 左袖垂着，右袖往前伸（提灯笼）
-  parts.push(place(paperBox(0.11 * k, 0.1 * k, 0.09 * k, 0.09 * k, 0.3 * k, sleeve, sleeve, sleeve), [-0.2 * k, 0.5 * k, 0], [0, 0, -10]));
-  parts.push(place(paperBox(0.11 * k, 0.1 * k, 0.09 * k, 0.09 * k, 0.3 * k, sleeve, sleeve, sleeve), [0.2 * k, 0.78 * k, -0.03 * k], [-70, 0, 0]));
-  parts.push(place(paperBox(0.05 * k, 0.04 * k, 0.05 * k, 0.04 * k, 0.07 * k, hand, hand, hand), [-0.22 * k, 0.44 * k, 0]));
-  parts.push(place(paperBox(0.05 * k, 0.04 * k, 0.05 * k, 0.04 * k, 0.07 * k, hand, hand, hand), [0.2 * k, 0.77 * k, -0.33 * k], [-70, 0, 0]));
-  // 头盒 + 两个丫髻
-  parts.push(place(paperBox(0.2 * k, 0.18 * k, 0.2 * k, 0.18 * k, 0.22 * k, hair, hair, hair, hair), [0, 0.84 * k, 0.005 * k]));
-  for (const sx of [-1, 1]) parts.push(place(paperBox(0.07 * k, 0.07 * k, 0.05 * k, 0.05 * k, 0.07 * k, hair, hair, hair, hair), [sx * 0.08 * k, 1.05 * k, 0.01 * k]));
-  const face = new THREE.PlaneGeometry(0.2 * k, 0.215 * k);
-  face.rotateY(Math.PI);
-  const [fu0, fv0, fuw, fvh] = uvRect(U([0, 288, 224, 224]));
-  const fu = face.attributes.uv as THREE.BufferAttribute;
-  for (let i = 0; i < fu.count; i++) fu.setXY(i, fu0 + fu.getX(i) * fuw, fv0 + fu.getY(i) * fvh);
-  place(face, [0, 0.95 * k, -0.0905 * k]);
-  const bodyGeo = withCell(mergeParts(parts.map(geo => ({ geo, face: 0 }))), [0, 0]);
-  const faceGeo = withCell(mergeParts([{ geo: face, face: 1 }]), [0, 0]);
-  for (const g of parts) g.dispose();
-  face.dispose();
+  // 红袄：光滑放样、下摆外撇、往里折边
+  const jac: LoftRow[] = [
+    [0.36, 0.172, 0.122], [0.45, 0.156, 0.106], [0.58, 0.15, 0.101], [0.67, 0.15, 0.1], [0.725, 0.126, 0.086], [0.755, 0.066, 0.056],
+  ].map(([y, a, b]) => ({ y: K(y!), a: K(a!), bf: K(b!), bb: K(b! * 1.05), n: 2.7 }));
+  sectorLoft(mb, jac, fourSectors(rectUv(jacket), rectUv(jBack), rectUv(jSide), 0.9, [8, 8, 4]), { group: 1, inside: y => new THREE.Vector3(0, y, 0) });
+  {
+    const hem = jac[0]!;
+    sectorLoft(mb, [hem, { ...hem, y: hem.y + K(0.01), a: hem.a * 0.86, bf: hem.bf * 0.84, bb: hem.bb * 0.84 }], wholeRing(rectUv(lipR), 20),
+      { group: 2, inside: y => new THREE.Vector3(0, y - K(0.05), 0) });
+  }
+  collarBand(mb, K(0.745), K(0.778), K(0.07), K(0.062), K(0.062), K(0.055), 0, rectUv(collarR), 3);
+  sectorLoft(mb, [{ y: K(0.755), a: K(0.04), bf: K(0.038), bb: K(0.04) }, { y: K(0.85), a: K(0.04), bf: K(0.038), bb: K(0.04) }], wholeRing(rectUv(hand), 10), { group: 5 });
+  // 袖子：左袖垂着，右袖往前伸（提灯笼）；袖口里的剪纸手
+  const sl = pleatTube(mb, new THREE.Vector3(K(-0.15), K(0.715), 0), new THREE.Vector3(K(-0.186), K(0.47), K(-0.02)), [0.044, 0.05, 0.06, 0.068].map(K), 6, K(0.003), rectUv(sleeve),
+    { topCap: true, lip: rectUv(lipR) });
+  paperHand(mb, sl.end.clone().addScaledVector(sl.T, -K(0.025)), new THREE.Vector3(-0.08, -1, -0.1), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, -0.3), k * 0.68, rectUv(hand), 10);
+  const sr = pleatTube(mb, new THREE.Vector3(K(0.15), K(0.715), 0), new THREE.Vector3(K(0.2), K(0.752), K(-0.285)), [0.044, 0.05, 0.06, 0.068].map(K), 6, K(0.003), rectUv(sleeve),
+    { topCap: true, lip: rectUv(lipR) });
+  paperHand(mb, sr.end.clone().addScaledVector(sr.T, -K(0.025)), sr.T.clone(), new THREE.Vector3(0, -1, 0), new THREE.Vector3(-1, -0.4, 0), k * 0.68, rectUv(hand), 12);
+  // 圆头壳 + 两个剪纸丫髻
+  const shell = headShellRows(k * 0.88, K(0.905), 1, true);
+  headShell(mb, shell, rectUv(shellR), 6, 24);
+  // 两个丫髻：糊纸的圆髻（下半埋进头壳），根上一道红绳
+  for (const sx of [-1, 1]) {
+    const cx = K(sx * 0.068), cy = K(0.992), cz = K(0.012), r = K(0.04);
+    const prof = [[-0.75, 0.66], [-0.4, 0.92], [0, 1], [0.4, 0.92], [0.75, 0.66], [0.95, 0.3]] as const;
+    const rows: LoftRow[] = prof.map(([dy, kr]) => ({ y: cy + dy * r, a: r * kr, bf: r * kr * 0.92, bb: r * kr * 0.92, cx, cz }));
+    sectorLoft(mb, rows, wholeRing(rectUv(hair), 12), { group: 30 + (sx > 0 ? 1 : 0), inside: y => new THREE.Vector3(cx, y, cz) });
+    const top = rows[rows.length - 1]!;
+    sectorLoft(mb, [top, { ...top, y: top.y + r * 0.05, a: 0.001, bf: 0.001, bb: 0.001 }], wholeRing(rectUv(hair), 12),
+      { group: 30 + (sx > 0 ? 1 : 0), inside: y => new THREE.Vector3(cx, y - r, cz) });
+    const tie: LoftRow[] = [-0.78, -0.6].map(dy => ({ y: cy + dy * r, a: r * 0.72, bf: r * 0.68, bb: r * 0.68, cx, cz }));
+    sectorLoft(mb, tie, wholeRing(rectUv(collarR), 12), { group: 34, inside: y => new THREE.Vector3(cx, y, cz) });
+  }
+  const bodyGeo = withCell(mergeParts([{ geo: mb.build(), face: 0 }]), [0, 0]);
+  const fb = new MeshBuilder();
+  faceCard(fb, shell, { cy: K(0.905), w: K(0.2), h: K(0.215) }, FACE_ELL, (u, v) => {
+    const [fu0, fv0, fuw, fvh] = uvRect(U([0, 288, 224, 224]));
+    return [fu0 + u * fuw, fv0 + v * fvh];
+  }, K(0.0035), { rings: 6, seg: 20 });
+  const faceGeo = withCell(mergeParts([{ geo: fb.build(), face: 1 }]), [0, 0]);
 
   const root = new THREE.Group();
   root.name = 'paperBoy';
@@ -705,7 +810,7 @@ function createBoy(o: PaperOpts): PaperRig {
   lantern.position.set(tip.x, tip.y - cordLen - 0.19 * k, tip.z);
   inner.add(pole, cord, lantern);
   const mouth = new THREE.Object3D();
-  mouth.position.set(0, 0.9 * k, -0.092 * k);
+  mouth.position.set(0, 0.855 * k, shellFrontZ(shell, 0, 0.855 * k) - 0.004 * k);
   inner.add(mouth);
   return noopRig(root, faceMesh, mouth, {
     jitterTarget: inner,

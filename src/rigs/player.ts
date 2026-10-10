@@ -67,18 +67,24 @@ export function createPlayerModel(): PlayerModel {
     // M4：肤色提亮一点、皮肤更哑（原 #9E7B62 + 冷色轮廓光像上了清漆的木棍）
     { height: PC_DIMS.bodyH, build: 'normal', shirt: PALETTE.UNIFORM, pants: '#3B3D42', shoes: '#141416', skin: '#A98A74', sleeves: 'short', head: 'none' },
     undefined,
-    { torsoMap: uniformShirtTexture(), shoeMap: clothShoeTexture() },
+    // char2：与老周同一套蒙皮人身，但不驼背；值勤衬衫敞着领口（摄像头支架从领口里伸出来）、短袖、两个胸兜、塞进裤腰；工装裤、布鞋
+    {
+      torsoMap: uniformShirtTexture(), shoeMap: clothShoeTexture(),
+      garment: { top: 'work_shirt', collar: 'shirt_open', placket: 'buttons', pockets: 'chest2', tucked: true, cuffs: 'none', bottom: 'work_trousers', shoes: 'cloth' },
+    },
   );
   body.root.name = 'playerBody';
   root.add(body.root);
   const J = body.joints;
 
-  // 领子、肩章、左臂红袖箍
-  const collar = ACCESSORIES.shirtCollar(body.s, PALETTE.UNIFORM, { open: true });
-  J.spine.add(collar);
-  const band = ACCESSORIES.armband(body.s);
+  // 领子（上身构建器做了 'collar' 就用它；旧版上身才挂备用的领子与肩章）、左臂红袖箍
+  if (!body.parts.collar) {
+    const collar = ACCESSORIES.shirtCollar(body.s, PALETTE.UNIFORM, { open: true });
+    J.spine.add(collar);
+    body.adopt(collar);
+  }
+  const band = ACCESSORIES.armband(body);
   J.shoulderL.add(band);
-  body.adopt(collar);
   body.adopt(band);
   // 冷色轮廓光（M1c look-dev）：藏蓝衬衫在夜里会和暗地面糊成一片，给身子的材质加一圈很淡的菲涅尔描边（与土地的金描边同一段着色器）
   // M4：皮肤与布鞋不加（皮肤上一圈蓝光像清漆木棍，鞋在侧光下成了发蓝的扁板）

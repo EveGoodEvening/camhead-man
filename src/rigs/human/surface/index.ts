@@ -11,56 +11,71 @@ import type { GhostDetail } from '../../../fx/ghostMaterials';
 import { canvasToTexture, createCanvas } from '../../../kit/canvas';
 import { newMat } from '../../../kit/geom';
 import { rng, range } from '../../../kit/rng';
+import { clothMottle, clothWeave, softFold, stitchLine } from '../../outfit/textures';
 import { faceTexture } from '../head';
 import type { FaceOpts, HumanoidMaterialMode, HumanoidSpec, HumanoidStyle, MatSlot } from '../types';
 
+/** 皮肤（脸、手、脖子、赤臂）的粗糙度（PLAN §3.4）。 */
+export const SKIN_ROUGHNESS = 0.7;
+/** 衣料（衬衫、袖、裤）的粗糙度：比皮肤哑得多，浅色衬衫在钠灯下也读成布、不读成皮肤。 */
+export const CLOTH_ROUGHNESS = 0.93;
+
 const fabricCache: Partial<Record<'shirt' | 'sleeve' | 'pants', THREE.CanvasTexture>> = {};
 
-/** 无花纹衣料仍有缝线、受力褶和细织纹；灰度图乘原色，不改角色的服装配色。 */
+/**
+ * 无花纹衣料（char2 WP-S）：浅灰底（≈0.93）乘原色，不改角色的服装配色。
+ * - 逐像素的细织纹：衬衫/袖子平纹，裤子斜纹；纱线不匀、纤维噪点，亮度起伏 ≤ 6%（不再是每 3 像素一道的横竖线——浅色衬衫上读成肋骨）；
+ * - 几道大而软、不对称的斜向褶（≤ 8%）：衬衫是腋下拉褶、腰上塞进去的短褶、后背肩胛；袖子是肘弯的斜褶；裤子是膝弯与脚踝；
+ * - 侧缝的针脚。形体的明暗交给几何（WP-U/WP-L），口袋、门襟、扣子不画在这里。
+ * UV：u 绕一圈（0 = +x，0.25 = 正前），v 自下而上；x 方向周期平铺。
+ */
 export function fabricTexture(part: 'shirt' | 'sleeve' | 'pants'): THREE.CanvasTexture {
   const hit = fabricCache[part];
   if (hit) return hit;
-  const { canvas, g } = createCanvas(256, 256);
-  g.fillStyle = '#f2f2f2';
-  g.fillRect(0, 0, 256, 256);
-  g.strokeStyle = 'rgba(0,0,0,0.035)';
-  g.lineWidth = 0.5;
-  for (let i = 0; i < 256; i += 3) {
-    g.beginPath();
-    g.moveTo(i, 0); g.lineTo(i, 256);
-    g.moveTo(0, i); g.lineTo(256, i);
-    g.stroke();
-  }
+  const W = 256;
+  const { canvas, g } = createCanvas(W, W);
+  g.fillStyle = '#eeeeee';
+  g.fillRect(0, 0, W, W);
   const r = rng(part === 'shirt' ? 81 : part === 'pants' ? 82 : 83);
-  g.lineWidth = 2;
-  g.strokeStyle = 'rgba(0,0,0,0.12)';
-  g.shadowColor = 'rgba(0,0,0,0.18)';
-  g.shadowBlur = 6;
-  for (let i = 0; i < 14; i++) {
-    const x = r() * 256, y = part === 'pants' ? range(r, 110, 245) : range(r, 165, 250);
-    g.beginPath();
-    g.moveTo(x, y);
-    g.quadraticCurveTo(x + 10, y - 12, x + range(r, -15, 15), y - range(r, 22, 55));
-    g.stroke();
-  }
-  g.shadowBlur = 0;
-  g.lineWidth = 1;
-  g.strokeStyle = 'rgba(0,0,0,0.2)';
-  if (part === 'shirt') {
-    g.strokeRect(62, 12, 4, 244);
-    g.strokeRect(26, 62, 22, 38);
-    g.strokeRect(80, 62, 22, 38);
-    g.fillStyle = '#8d8d8d';
-    for (let y = 38; y < 256; y += 43) {
-      g.beginPath();
-      g.arc(64, y, 1.3, 0, Math.PI * 2);
-      g.fill();
+  // 大片极淡的明暗（布料不是一块均匀的塑料）
+  for (let i = 0; i < 6; i++) {
+    const x = r() * W, y = r() * W, rad = range(r, 30, 70);
+    for (const off of [-W, 0, W]) {
+      const gr = g.createRadialGradient(x + off, y, 0, x + off, y, rad);
+      gr.addColorStop(0, r() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.fillRect(x + off - rad, y - rad, rad * 2, rad * 2);
     }
-  } else {
-    g.beginPath();
-    g.moveTo(3, 0); g.lineTo(3, 256);
-    g.moveTo(0, 246); g.lineTo(256, 246);
-    g.stroke();
+  }
+  // 中频的棉布斑驳（纱线粗细、染色不匀；3m 外仍看得出是布、不是塑料或皮肤）：8 像素一格的平滑值噪声，±3.5%
+  clothMottle(g, W, W, part === 'shirt' ? 87 : part === 'pants' ? 88 : 89, 8, 0.035);
+  // 褶：画布 y 向下 = v 向下（画布顶 = 衣服上端）。[x0, y0, x1, y1, 宽, 强度]（像素）
+  const folds: [number, number, number, number, number, number][] = part === 'shirt'
+    ? [
+      // 腋下往胸口的拉褶（前：u 0.0–0.5 的两侧），后背肩胛的斜拉线，腰上塞进裤腰的短褶
+      [2, 64, 26, 122, 9, 0.075], [8, 84, 30, 130, 6, 0.05], [126, 66, 100, 124, 9, 0.07], [120, 86, 98, 132, 6, 0.045],
+      [160, 52, 186, 120, 9, 0.06], [226, 56, 204, 122, 9, 0.055],
+      [60, 250, 68, 206, 6, 0.07], [90, 252, 82, 212, 6, 0.06], [36, 252, 42, 220, 5, 0.05], [176, 250, 182, 214, 6, 0.06], [214, 252, 208, 220, 5, 0.05],
+    ]
+    : part === 'sleeve'
+      ? [[44, 118, 92, 150, 8, 0.075], [60, 100, 104, 128, 6, 0.06], [70, 138, 110, 160, 5, 0.05], [176, 132, 214, 112, 7, 0.05], [14, 30, 34, 66, 6, 0.04]]
+      : [
+        // 膝弯（裤子背面 u 0.75 附近横向的褶 + 正面膝盖的斜拉褶）、脚踝堆褶
+        [168, 108, 210, 122, 8, 0.075], [176, 126, 214, 134, 6, 0.06], [50, 104, 84, 134, 8, 0.06], [80, 96, 102, 120, 6, 0.045],
+        [30, 228, 76, 238, 6, 0.06], [140, 224, 190, 236, 6, 0.06], [96, 238, 132, 246, 5, 0.05], [110, 16, 122, 62, 7, 0.035],
+      ];
+  for (const [x0, y0, x1, y1, wd, a] of folds) softFold(g, W, x0, y0, x1, y1, wd, a);
+  clothWeave(g, 0, 0, W, W, part === 'shirt' ? 84 : part === 'pants' ? 85 : 86, { amp: 0.05, twill: part === 'pants' });
+  // 侧缝（u = 0/1 与 0.5）：缝份把布顶起一道，旁边一道很淡的阴影 + 针脚
+  for (const x of [0, W / 2, W]) {
+    const gr = g.createLinearGradient(x - 5, 0, x + 5, 0);
+    gr.addColorStop(0, 'rgba(0,0,0,0)');
+    gr.addColorStop(0.5, 'rgba(0,0,0,0.05)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - 5, 0, 10, W);
+    stitchLine(g, [[Math.min(W - 0.5, Math.max(0.5, x)), 0], [Math.min(W - 0.5, Math.max(0.5, x)), W]], '#8a8a8a', { alpha: 0.45, dash: 3 });
   }
   const tex = canvasToTexture(canvas);
   tex.name = `fabric.${part}`;
@@ -79,26 +94,26 @@ export function createRigMaterials(
 ): Record<MatSlot, THREE.MeshStandardMaterial> {
   const liveTemp = TEMP_C.alive;
   const skinColor = spec.skin ?? '#C99A78';
-  const shirt = own(newMat({ color: spec.shirt, map: fabricTexture('shirt'), roughness: 0.88, tempC: liveTemp }));
-  const pants = own(newMat({ color: spec.pants, map: fabricTexture('pants'), roughness: 0.9, tempC: liveTemp }));
+  const shirt = own(newMat({ color: spec.shirt, map: fabricTexture('shirt'), roughness: CLOTH_ROUGHNESS, tempC: liveTemp }));
+  const pants = own(newMat({ color: spec.pants, map: fabricTexture('pants'), roughness: CLOTH_ROUGHNESS, tempC: liveTemp }));
   const shoes = own(newMat({ color: spec.shoes ?? '#16161a', roughness: 0.75, tempC: liveTemp }));
   shoes.userData.shoes = true;
-  // M4：皮肤更哑（0.7 的高光加上主角的冷色轮廓光，像上了清漆的木棍）
-  const skin = own(newMat({ color: skinColor, roughness: 0.85, tempC: liveTemp }));
+  // char2：皮肤 0.7（M4 曾调到 0.85——那时的木棍四肢一亮就像上了漆；连续的蒙皮表面需要一点生气）。脸、手、脖子同一颜色同一粗糙度，接缝处不出色差。
+  const skin = own(newMat({ color: skinColor, roughness: SKIN_ROUGHNESS, tempC: liveTemp }));
   skin.userData.skin = true;
   const belt = own(newMat({ color: '#1b1714', roughness: 0.55, metalness: 0.1, tempC: liveTemp }));
   if (style?.shoeMap) {
     shoes.map = style.shoeMap;
     shoes.color.set(0xffffff);
   }
-  const torso = style?.torsoMap ? own(newMat({ color: 0xffffff, map: style.torsoMap, roughness: 0.88, tempC: liveTemp })) : shirt;
-  const sleeve = own(newMat({ color: style?.sleeveMap ? 0xffffff : spec.shirt, map: style?.sleeveMap ?? fabricTexture('sleeve'), roughness: 0.88, tempC: liveTemp }));
+  const torso = style?.torsoMap ? own(newMat({ color: 0xffffff, map: style.torsoMap, roughness: CLOTH_ROUGHNESS, tempC: liveTemp })) : shirt;
+  const sleeve = own(newMat({ color: style?.sleeveMap ? 0xffffff : spec.shirt, map: style?.sleeveMap ?? fabricTexture('sleeve'), roughness: CLOTH_ROUGHNESS, tempC: liveTemp }));
   const robe = style?.robeMap ? own(newMat({ color: 0xffffff, map: style.robeMap, roughness: 0.92, tempC: liveTemp })) : sleeve;
   const hemColor = new THREE.Color(spec.robe ? 0xffffff : spec.shirt).multiplyScalar(0.72);
   const hem = own(newMat({ color: hemColor, roughness: 0.9, tempC: liveTemp }));
   const faceMat = spec.head === 'human' && face
-    ? own(newMat({ color: 0xffffff, map: faceTexture(face as FaceOpts), roughness: 0.8, tempC: liveTemp }))
-    : own(newMat({ color: skinColor, roughness: 0.85, tempC: liveTemp }));
+    ? own(newMat({ color: 0xffffff, map: faceTexture(face as FaceOpts), roughness: SKIN_ROUGHNESS, tempC: liveTemp }))
+    : own(newMat({ color: skinColor, roughness: SKIN_ROUGHNESS, tempC: liveTemp }));
   return { torso, sleeve, pants, shoes, skin, belt, hem, robe, face: faceMat };
 }
 
@@ -134,18 +149,28 @@ export interface ModeDetailIn {
 export function modeDetail(m: 'ghost' | 'replay', o: ModeDetailIn): GhostDetail {
   const map = o.src?.map ?? null;
   const tune = m === 'ghost' ? o.style?.ghost : undefined;
-  const replay = m === 'replay';
+  const T = MODE_TUNE[m];
   return {
     map,
-    mapAmt: map ? (o.face ? 1 : replay ? 0.85 : 0.5) : 0,
+    mapAmt: map ? (o.face ? T.faceMap : T.bodyMap) : 0,
     base: o.src?.color ?? 0xffffff,
-    baseAmt: replay ? 0.45 : tune?.baseAmt ?? (o.face ? 0.3 : 0.36),
-    solid: o.solidOverride ?? (o.accessory ? 1 : o.face ? 0.35 : 0.22),
-    rim: replay ? 0.22 : 0.32,
+    baseAmt: tune?.baseAmt ?? (o.face ? T.faceBase : T.bodyBase),
+    solid: o.solidOverride ?? (o.accessory ? 1 : o.face ? T.faceSolid : T.bodySolid),
+    rim: T.rim,
     albedo: 1,
-    ...(replay ? { opacity: 0.75 } : {}),
+    ...(m === 'replay' ? { opacity: MODE_TUNE.replay.opacity } : {}),
   };
 }
+
+/**
+ * 魂影/回放的参数（全是 uniform，同一个着色器程序）。char2：身子是一整层连续的壳（没有叠在一起的零件替它加不透明度），
+ * 衣料贴图的褶与斑驳也更值得看：身子的贴图调制 0.5 → 0.6、实度 0.22 → 0.25；脸（连头发）不变——五官在 3m 外仍可读、头发读成深色。
+ * 回放：衣服花色 0.85、原色 0.45、不透明度 0.75（M4 第 2 轮）。
+ */
+export const MODE_TUNE = {
+  ghost: { faceMap: 1, bodyMap: 0.6, faceBase: 0.3, bodyBase: 0.36, faceSolid: 0.35, bodySolid: 0.25, rim: 0.32 },
+  replay: { faceMap: 1, bodyMap: 0.85, faceBase: 0.45, bodyBase: 0.45, faceSolid: 0.35, bodySolid: 0.25, rim: 0.22, opacity: 0.75 },
+} as const;
 
 /** 魂影颜色：style.ghost.tint 优先，其次调用方给的颜色，缺省 PALETTE.GHOST。 */
 export function ghostTint(style: Readonly<HumanoidStyle> | undefined, color: THREE.ColorRepresentation | undefined): THREE.ColorRepresentation {

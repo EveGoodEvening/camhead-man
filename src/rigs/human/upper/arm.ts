@@ -198,7 +198,7 @@ export function buildArm(mb: MeshBuilder, d: UpperDims, g: Readonly<GarmentSpec>
       const P1 = A0pts[j]!;
       const dist = L.distanceTo(P1);
       const up = smooth01(yBot, yTop, L.y);
-      const k0 = 0.25 + 0.8 * up;
+      const k0 = 0.25 + (d.female ? 0.5 : d.old ? 0.68 : 0.8) * up;
       const m0 = tan[j]!.clone().multiplyScalar(dist * k0);
       const m1 = new THREE.Vector3(0, -dist * (0.9 + 0.25 * up), 0);
       return hermite(L, m0, P1, m1, tau);

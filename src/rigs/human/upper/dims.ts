@@ -52,7 +52,7 @@ export function upperDims(_spec: Readonly<HumanoidSpec>, p: Readonly<BodyProfile
   const bWb = Wr.pos[3 * q * 3 + 2]! - Wr.centre[2];
   const xS = b.shoulderR[0], yS = b.shoulderR[1];
   const yC = layout.collarY;
-  const ySt = yS + (female ? 0.013 : old ? 0.019 : child ? 0.02 : 0.025) * s;
+  const ySt = yS + (female ? 0.006 : old ? 0.016 : child ? 0.02 : 0.025) * s;
   const NT = seams.NECK_TOP;
   const nq = NT.count / 4;
   const ntA = NT.pos[0]! - NT.centre[0];

@@ -84,12 +84,15 @@ async function programsStable(h, notes) {
   await h.call('wait', 2);
   await h.call.try('vcr', 'seek', '03:14:05');
   await h.call('frame', 4);
-  await h.call.try('vcr', 'exit');
+  // char2：在退出前量——退出会释放带子场景（里面的蒙皮人偶是带子灯光下独有的程序变体，释放后程序数会变少，那不是现场编译）
   const p3 = await perfN();
   ok = T(`录像机打开后 seek 过分屏、播放不再编译（${p2} → ${p3}）`, p3 === p2, `${p2} → ${p3}`) && ok;
+  await h.call.try('vcr', 'exit');
+  const p3x = await perfN();
+  ok = T(`退出录像机不编译（${p3} → ${p3x}）`, p3x <= p3, `${p3} → ${p3x}`) && ok;
   await passLive();
   const p4 = await perfN();
-  ok = T(`第二遍整套程序数不变（${p3} → ${p4}）`, p4 === p3, `${p3} → ${p4}`) && ok;
+  ok = T(`第二遍整套程序数不变（${p3x} → ${p4}）`, p4 === p3x, `${p3x} → ${p4}`) && ok;
   const back = await h.call.try('selftest', 'm1d.quality_low');
   ok = T('切回 low', back.ok && back.result.ok, JSON.stringify(back)) && ok;
   void progs;

@@ -108,6 +108,13 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     return new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]);
   });
   const skeleton = new THREE.Skeleton(bones, boneInverses);
+  /**
+   * 骨骼贴图（Skeleton.boneTexture，首次渲染时建）不挂在任何材质上：区域卸载时 Disposer.trackObject 只释放几何/材质/贴图、
+   * 从不调用 rig.dispose()，于是每个区域里的蒙皮人偶每进出一次漏一张贴图（char2 WP0 复核：roundtrip textures +5/趟）。
+   * 所以槽网格的（本人偶私有）几何或材质被释放时顺手释放骨骼贴图；多释放一次无害（three 渲染时 boneTexture 为 null 会重建）。
+   */
+  const releaseSkeleton = () => skeleton.dispose();
+  const skeletonHooks: THREE.EventDispatcher<{ dispose: object }>[] = [];
 
   const parts: Record<string, THREE.Mesh> = {};
   const bodyMeshes: THREE.Mesh[] = [];
@@ -178,6 +185,11 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
       for (const it of items) if (it.geo !== geo) it.geo.dispose();
       const pad = Math.max(0, ...items.map(it => it.pad));
       const mesh = new THREE.SkinnedMesh(geo, mats[g.slot]);
+      const hook = (isCachedGeometry(geo) ? mats[g.slot] : geo) as unknown as THREE.EventDispatcher<{ dispose: object }>;
+      if (!skeletonHooks.includes(hook)) {
+        hook.addEventListener('dispose', releaseSkeleton);
+        skeletonHooks.push(hook);
+      }
       mesh.bind(skeleton, bindIdent);
       addPart(g.name, root, mesh);
       skinnedMeshes.push(mesh);
@@ -450,6 +462,8 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
       for (const g of tracked) g.dispose();
       tracked.clear();
       for (const r of regions) r.dispose?.();
+      for (const hk of skeletonHooks) hk.removeEventListener('dispose', releaseSkeleton);
+      skeletonHooks.length = 0;
       skeleton.dispose();
       for (const m of owned) m.dispose();
       owned.clear();

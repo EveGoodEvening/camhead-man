@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import type { AreaPart } from '../../core/area';
+import { Disposer } from '../../core/disposer';
 import type { Game } from '../../core/game';
 import type { Pose } from '../../core/types';
 import type { SelftestResult } from '../../debug/selftest';
@@ -463,6 +464,14 @@ registerSelftest('char2.skin_probe', (game: Game) => {
     const hit3 = rc3.intersectObject(tube, false);
     if (cycle === 0) r.t('root 平移旋转后射线仍命中（胶囊在世界空间）', hit3.length > 0 && Math.abs(hit3[0]!.distance - (1 - R)) < 0.01, hit3.length ? hit3[0]!.distance.toFixed(4) : 'no hit');
     countPixels(renderer, scene, cam);
+    if (cycle === 0) {
+      // 区域卸载走 Disposer.trackObject（只释放几何/材质/贴图，不调 rig.dispose）：骨骼贴图也得跟着释放（roundtrip 不漏贴图）
+      const hadBoneTex = !!tube.skeleton.boneTexture;
+      const d = new Disposer();
+      d.trackObject(h.root);
+      d.dispose();
+      r.t('区域卸载（Disposer.trackObject）也释放骨骼贴图', hadBoneTex && tube.skeleton.boneTexture === null, `had ${hadBoneTex}`);
+    }
     h.dispose();
     scene.clear();
     counts.push({ geo: renderer.info.memory.geometries, tex: renderer.info.memory.textures, prog: renderer.info.programs?.length ?? 0 });

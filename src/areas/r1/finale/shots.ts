@@ -70,8 +70,9 @@ export const SHOTS: readonly ShotDef[] = [
     // M4：从屋子西北角斜着俯看他的背：两支蜡烛（挪开以后）一左一右在他脑袋两边，不再叠在头上；右边是 CRT 里 CH2 的他
     view: { player: [-7.1, 20.15], yaw: 137, pitch: -47, mode: 'vf', zoom: 1 },
     keys: [NPC.ZHOU],
-    // 同 shot.r1.fin_portrait：烛光只剩两粒火苗芯，高光阈值 0.55
-    highlight: 0.55,
+    // 同 shot.r1.fin_portrait：烛光只剩两粒火苗芯，高光阈值 0.55。char2：两粒火苗芯模糊后的 P99.5 只有 0.38–0.40
+    // （char2 之前的 before 图量出来 0.403，已低于 0.47；原来是魂影老周白亮的“蛋头”顶上了亮核，新头顶是深色头发），放到 0.45
+    highlight: 0.45,
   },
   {
     id: 'shot.r1.fin_door_mark', label: '寅时·老周戴上帽子站在门口，身边地上一个粉笔叉；门楣上的空支架（从院里朝门岗看）',

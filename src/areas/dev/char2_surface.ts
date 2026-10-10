@@ -15,6 +15,7 @@ import { registerSelftest } from '../../debug/selftest';
 import { createCharacter, type CharacterKind, type CharacterRig } from '../../rigs/characters';
 import { createHumanoidInternal } from '../../rigs/human/assemble';
 import { REGION_LEGACY as HEAD_LEGACY } from '../../rigs/human/head';
+import { uvOfPoint } from '../../rigs/human/head/mapping';
 import { GAIT, legGait } from '../../rigs/human/motion';
 import { CLOTH_ROUGHNESS, SKIN_ROUGHNESS, fabricTexture } from '../../rigs/human/surface';
 import { armbandTexture, clothShoeTexture, floralTexture, robeTexture, uniformShirtTexture, zhongshanTexture } from '../../rigs/outfit/textures';
@@ -358,7 +359,9 @@ registerSelftest('char2.surface_programs', (game: Game) => {
       c.update(1 / 30, pass ? 1.2 : 0);
       scene.add(c.root);
       rigs.push(c);
+      // 只看人身（addPart 的部件）：配件（布帽、毡帽借 fabric 贴图）有自己的粗糙度
       if (look === 'live') c.root.traverse(o => {
+        if (!o.userData.rigPart) return;
         const mm = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (mm?.isMeshStandardMaterial) mats.add(`${mm.userData.skin ? 'skin' : mm.map?.name ?? ''}|${mm.roughness}`);
       });
@@ -432,13 +435,32 @@ registerSelftest('char2.surface_hands', (game: Game) => {
     c.root.removeFromParent();
     c.dispose();
     notes.push(`${kind} 脸 ${fx(face, 1)} 手 ${fx(hand, 1)}`);
-    if (!(hand <= face * 1.05 + 1)) bad.push(kind);
+    // 贴图本身：两颊（眼下、鼻翼外）的平均亮度 vs 肤色（旧脸贴图把下半张脸压暗 35%；新的应 ≈ 1）
+    const cv = fm?.map?.image as HTMLCanvasElement | undefined;
+    let mapRatio = NaN;
+    if (cv && typeof cv.getContext === 'function') {
+      const g = cv.getContext('2d', { willReadFrequently: true })!;
+      let sum = 0, n = 0;
+      for (const sx of [-1, 1]) {
+        const [u, v] = uvOfPoint(sx * 0.045, 0.112, -0.075);
+        const X = Math.round(u * cv.width), Y = Math.round((1 - v) * cv.height);
+        const d = g.getImageData(X - 4, Y - 4, 9, 9).data;
+        for (let i = 0; i < d.length; i += 4) { sum += 0.3 * d[i]! + 0.59 * d[i + 1]! + 0.11 * d[i + 2]!; n++; }
+      }
+      // 皮肤材质颜色是线性的，贴图像素是 sRGB：换成 sRGB 再比
+      const sk = (skinMat?.color ?? new THREE.Color(1, 1, 1)).clone().convertLinearToSRGB();
+      mapRatio = sum / n / (255 * (0.3 * sk.r + 0.59 * sk.g + 0.11 * sk.b));
+    }
+    notes.push(`${kind} 脸贴图/肤色 ${fx(mapRatio, 2)}`);
+    // 渲染比较：手（背/侧对着前光）与脸（下半张脸朝前下、眼窝鼻底有几何阴影）朝向不同，只作粗查（+30%）；
+    // 真正的判据是贴图不压暗脸（上面 mapRatio ≥ 0.93）
+    if (!(hand <= face * 1.3 + 1) || !(mapRatio >= 0.93 || Number.isNaN(mapRatio))) bad.push(kind);
   }
   r.t('脸与手（皮肤槽）同粗糙度', matBad.length === 0, matBad.join('；'));
   // 亮度比较要等新的脸（WP-H：去掉旧脸贴图下巴那道 35% 的暗渐变）；头部还是旧版时只报告不判
   const detail = `${bad.length ? `超出：${bad.join(',')}；` : ''}${notes.join('；')}`;
   if (HEAD_LEGACY) r.t('（旧版脸贴图，只报告）常光：手的平均亮度 vs 脸（眼睛以下）', true, detail);
-  else r.t('常光：手的平均亮度 ≤ 脸（眼睛以下）+5%', bad.length === 0, detail);
+  else r.t('常光：脸贴图两颊 ≈ 肤色（≥ 0.93）；手的平均亮度 ≤ 脸（眼睛以下）+30%', bad.length === 0, detail);
   return r.done();
 });
 

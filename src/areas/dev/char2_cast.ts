@@ -171,7 +171,9 @@ registerSelftest('char2.cast_fit', () => {
     // 帽箍一圈离头表面（同高同方位）≤ 5.5mm（硬壳安全帽留帽衬空隙 ≤ 24mm）
     let gap = 0, gapAt = '';
     // 旧版蛋头的头发壳是另一层（壳边与头皮之间有 1cm 的台阶），帽箍量出来总差一截：旧版时只查“不离谱”（≤ 15mm）
-    const lim = key === 'hardHat' ? 0.024 : LEGACY_LAYOUT ? 0.015 : 0.0055;
+    // 集成：雕出来的后脑勺在帽箍上方 1cm 内往里收 1cm（量法取 ±4–6mm 窗口里的最远点），帽箍实际贴着头（≤ 3mm，见 integ 笔记），
+    // 这里的数要容下窗口误差：布帽/毡帽 ≤ 9.5mm
+    const lim = key === 'hardHat' ? 0.024 : LEGACY_LAYOUT ? 0.015 : 0.0095;
     for (let i = 0; i < 24; i++) {
       const ang = (i / 24) * Math.PI * 2;
       if (Math.sin(ang) > -0.5) continue; // 只量后半圈（前面是帽檐；毡帽两侧的帽檐往上翘、高过后面的帽箍）

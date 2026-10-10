@@ -227,8 +227,8 @@ try {
       await HIDE();
       for (const look of ['replay', 'ghost', 'silhouette']) {
         if (!wantLook(look)) continue;
-        await spawn({ op: 'spawn', clear: true, crowd: { count: 12, cols: 6, spacing: 0.6, look, seed: 1984, kidsFrontRow: 2 }, pos: [ST[0], 0, ST[1] - 0.5], yaw: 180 });
-        for (const [vt, cam, ty, fov] of [['wide', F(4.5, 1.3), 0.9, 44], ['close', F(1.8, 1.45), 1.25, 36]]) {
+        await spawn({ op: 'spawn', clear: true, crowd: { count: 12, cols: 6, spacing: 0.6, look, seed: 1984, kidsFrontRow: 2 }, pos: [ST[0], 0, ST[1]], yaw: 0 });
+        for (const [vt, cam, ty, fov] of [['wide', F(4.5, 1.3), 0.9, 44], ['close', F(2.4, 1.55), 1.2, 36]]) {
           if (!wantView(vt)) continue;
           await pose(cam, [ST[0], ty, ST[1]], fov);
           await shoot(`crowd_${look}_${vt}`);
@@ -247,7 +247,9 @@ try {
       for (const [kind, seed, tag] of [['vendor', 3, 'vendor3'], ['vendor', 9, 'vendor9'], ['boy', 1, 'boy']]) {
         if (!wantKind(tag)) continue;
         await spawn({ op: 'spawn', clear: true, paper: { kind, seed, breathing: kind === 'vendor', lanternText: '引路' }, pos: [ST[0], 0, ST[1]], yaw: 0 });
-        for (const [vt, yaw, d, y, ty, fov] of [['front', 0, 3, 0.9, 0.8, 40], ['q34', 40, 3, 1.0, 0.8, 40], ['side', 90, 3, 0.9, 0.8, 40], ['head', 0, 1.2, 1.4, 1.35, 24]]) {
+        // 头部近景：摊主头心 ≈1.35 m，门童（1.1 m）≈0.925 m
+        const hy = kind === 'boy' ? 0.925 : 1.35;
+        for (const [vt, yaw, d, y, ty, fov] of [['front', 0, 3, 0.9, 0.8, 40], ['q34', 40, 3, 1.0, 0.8, 40], ['side', 90, 3, 0.9, 0.8, 40], ['head', 0, 1.2, hy + 0.05, hy, 24]]) {
           if (!wantView(vt)) continue;
           await ev(([yy]) => window.__T.rot(yy), [yaw]);
           await pose(F(d, y), [ST[0], ty, ST[1]], fov);

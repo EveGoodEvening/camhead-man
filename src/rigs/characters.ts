@@ -158,8 +158,9 @@ function buildTudi(o: CharacterOpts): Built {
   h.adopt(beard);
   // 枣木拐杖立在右前方（挂在 root 上，拄着不动），右手握在杖身上
   // char2：拐杖矮一点、立得往外一点，灯笼挂在他肩膀外侧，不再正好挡在脸前
-  const cane = ACCESSORIES.caneLantern(s * 1.2);
-  cane.group.position.set(0.21, 0, -0.27);
+  // 集成：右手往外张一点握着杖（掌心正好在杖上），杖再矮一点，灯笼挂在肩外侧、脸旁边，3/4 角度看也不挡脸
+  const cane = ACCESSORIES.caneLantern(s * 1.1);
+  cane.group.position.set(0.37 * s, 0, -0.357 * s);
   h.root.add(cane.group);
   h.adopt(cane.group);
   // 灯笼保持自己的红光（魂影/回放材质都不换它）
@@ -181,7 +182,7 @@ function buildTudi(o: CharacterOpts): Built {
     h,
     props: { lantern: cane.lantern, lanternLight: cane.light, cane: cane.group, beard },
     post(dt) {
-      holdArm(h, 'R', [0.55, 0, 0.1], 0.7);
+      holdArm(h, 'R', [0.3, 0, 0.3], 0.9);
       t += dt;
       // 灯笼轻轻晃；只有灯笼时“自己飘着”，起伏大一点
       const k = lanternOnly ? 1 : 0.35;
@@ -467,7 +468,7 @@ function createHuang(o: CharacterOpts): CharacterRig {
   const man = createHumanoidInternal(manSpec, {
     skin: '#B08A68', hair: '#3a3026', hairStyle: 'thin_old', age: 'old', seed: 1970, head: 'oldMan',
     sculpt: { chin: 0.6, cheekbone: 0.4, earSize: 0.3, jawW: -0.3, cheekFull: -0.3, lipFull: -0.2 },
-    paint: { eyeShape: 'single', brow: 'thin', wrinkles: 0.6, spots: 0.15 },
+    paint: { eyeShape: 'single', brow: 'thin', wrinkles: 0.6, spots: 0.15, smile: 0.6 },
   }, { torsoMap: clothes, garment: suitGarment });
   man.root.name = 'huangMan';
   collarOr(man, () => zhongshanDetails(man, '#4E5A63'), man.joints.spine);

@@ -19,7 +19,7 @@ type RGB = [number, number, number];
 const faceCache = new Map<string, THREE.CanvasTexture>();
 
 /** 画法的缺省（按头型预设与年龄），face.paint 覆盖。 */
-export function paintOf(o: Readonly<FaceOpts>, hp: HeadParams): Required<Omit<FacePaint, 'mole' | 'lips'>> & Pick<FacePaint, 'mole' | 'lips'> {
+export function paintOf(o: Readonly<FaceOpts>, hp: HeadParams): Required<Omit<FacePaint, 'mole' | 'lips' | 'smile'>> & Pick<FacePaint, 'mole' | 'lips' | 'smile'> {
   const p = o.paint ?? {};
   const pr = hp.preset;
   const eyeShape = p.eyeShape ?? (pr === 'woman' || pr === 'girl' || pr === 'boy' ? 'double' : pr === 'oldWoman' || pr === 'deity' ? 'droop' : pr === 'oldMan' ? 'single' : 'single');
@@ -32,7 +32,7 @@ export function paintOf(o: Readonly<FaceOpts>, hp: HeadParams): Required<Omit<Fa
     spots: p.spots ?? 0,
     ...(p.lips !== undefined ? { lips: p.lips } : {}),
     ...(p.mole !== undefined ? { mole: p.mole } : {}),
-    ...((p as { smile?: number }).smile !== undefined ? { smile: (p as { smile?: number }).smile } : {}),
+    ...(p.smile !== undefined ? { smile: p.smile } : {}),
   };
 }
 
@@ -463,13 +463,14 @@ function paintNose(g: CanvasRenderingContext2D, hp: HeadParams, path: PathFn, fp
   for (const sgn of [-1, 1]) {
     const [X, Y] = fp(sgn * ax * 0.5, yb + 0.0022);
     const [X2, Y2] = fp(sgn * ax * 0.5 + 0.0035, yb + 0.0022 + 0.0015);
-    const rx = Math.max(2, Math.abs(X2 - X)), ry = Math.max(1.4, Math.abs(Y2 - Y));
-    g.fillStyle = css(mul(skin, 0.38), 0.85);
+    // 集成：鼻孔浅一点、小一点（鼻底几何本身在顶光下已有阴影；太黑连着唇上的影子读成一撇胡子）
+    const rx = Math.max(1.8, Math.abs(X2 - X) * 0.85), ry = Math.max(1.2, Math.abs(Y2 - Y) * 0.85);
+    g.fillStyle = css(mul(skin, 0.5), 0.72);
     g.beginPath();
     g.ellipse(X, Y, rx, ry, 0, 0, Math.PI * 2);
     g.fill();
     // 鼻翼的褶
-    g.strokeStyle = css(mul(skin, 0.7), 0.45);
+    g.strokeStyle = css(mul(skin, 0.72), 0.32);
     g.lineWidth = 1.2;
     path(qcurve([sgn * (ax + 0.004), yb + 0.0095], [sgn * (ax + 0.0055), yb + 0.004], [sgn * ax * 0.85, yb + 0.0005], 8));
     g.stroke();
@@ -485,7 +486,7 @@ function paintMouth(g: CanvasRenderingContext2D, hp: HeadParams, pt: ReturnType<
   const up = 0.0058 * lf, lo = 0.0072 * lf;
   const lipC: RGB = pt.lips ? hexRgb(pt.lips) : hp.female ? mix(skin, [176, 82, 76], 0.62) : hp.child ? mix(skin, [190, 100, 90], 0.45) : mix(skin, [150, 86, 72], 0.4);
   // 嘴角上扬（米）：土地爷缺省笑；paint.smile（-1..1，见 requests/wp-h.md #1）
-  const smileK = (pt as { smile?: number }).smile ?? (hp.deity ? 1 : 0);
+  const smileK = pt.smile ?? (hp.deity ? 1 : 0);
   const smile = 0.0016 * smileK;
   // 上唇（唇峰、唇珠）
   const cornerL: [number, number] = [-mw, my + smile], cornerR: [number, number] = [mw, my + smile];
@@ -550,9 +551,9 @@ function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, p
     // 眼袋下沿
     crease(qcurve([s * 0.022, 0.141], [s * 0.034, 0.1355], [s * 0.046, 0.1405], 8), 0.38);
     // 法令纹：鼻翼外 → 嘴角外
-    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), 0.6, 0.75, 0);
+    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.32 : 0.45, hp.female ? 0.6 : 0.7, 0);
     // 嘴角下的纹
-    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], 0.3, 0.45, 0);
+    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.18 : 0.26, 0.45, 0);
   }
 }
 

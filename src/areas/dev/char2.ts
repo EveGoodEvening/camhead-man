@@ -430,7 +430,8 @@ registerSelftest('char2.skin_probe', (game: Game) => {
     const R = 0.05 * h.s;
     const dir = wristW.clone().sub(elbowW).normalize();
     const perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(1, 0, 0)).normalize();
-    const rc2 = new THREE.Raycaster(new THREE.Vector3(mid.x + 1, mid.y, mid.z).addScaledVector(perp, R + 0.05), new THREE.Vector3(-1, 0, 0), 0, 5);
+    // 只量这根前臂附近（far 1.2）：集成后 sleeves 里还有另一条胳膊，整条射线横穿身体会打中它
+    const rc2 = new THREE.Raycaster(new THREE.Vector3(mid.x + 1, mid.y, mid.z).addScaledVector(perp, R + 0.05), new THREE.Vector3(-1, 0, 0), 0, 1.2);
     const miss = rc2.intersectObject(tube, false);
     if (cycle === 0) {
       r.t('射线命中前臂（距离 ≈ 1 − r，±1cm）', hit.length > 0 && Math.abs(hit[0]!.distance - (1 - R)) < 0.01, hit.length ? hit[0]!.distance.toFixed(4) : 'no hit');

@@ -189,6 +189,8 @@ export function buildRobe(ctx: BuildCtx, st: LowerStyle, top24: Float32Array): R
       geo.computeVertexNormals();
       smoothSeam(geo, nRows);
       (nor.array as Float32Array).set(topN, 0);
+      // 小腿还缩成一个点（弯得很小：老人站姿膝微屈）时三角形零面积、重算出来的法线是 0：用静止时的法线
+      if (smooth01(0.45, 0.95, bend) < 1e-3) (nor.array as Float32Array).set(restN.subarray(nRobe * 3), nRobe * 3);
     }
     pos.needsUpdate = true;
     nor.needsUpdate = true;

@@ -72,6 +72,8 @@ export interface FacePaint {
   spots?: number;
   /** 痣：贴图 [u, v]（0..1） */
   mole?: [number, number];
+  /** 嘴角上扬 -1..1（0 = 平；> 0 嘴角上翘）。char2 集成补：土地爷缺省笑，黄三爷滑笑 */
+  smile?: number;
 }
 
 /** 头部外观（人头贴图与头型）：WP2 内部。char2 起 hairStyle 扩充、加 head/sculpt/paint（都可省）。 */

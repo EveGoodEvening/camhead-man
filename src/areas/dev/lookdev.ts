@@ -50,8 +50,8 @@ const WIN = { x0: 7.3, x1: 9.2, y0: 0.95, y1: 2.05 } as const;
 export const LD_SODIUM: V3 = [11.8, 0, 10.6];
 /** 门灯（墙上，门洞正上方）。 */
 const GATE_LAMP_AT: V3 = [DOOR.x, 2.62, LD_BOOTH.z0];
-/** 门口站着的摄像头人（主角同款模型）。 */
-export const LD_DUMMY: V3 = [7.0, 0, 11.45];
+/** 门口站着的摄像头人（主角同款模型），站在门岗前的水泥台上（台面 y 0.06：放在 0 上鞋会陷进台子里）。 */
+export const LD_DUMMY: V3 = [7.0, 0.06, 11.45];
 /** 窗前的魂影（layer.yin）。 */
 const LD_GHOST: V3 = [9.0, 0, 11.2];
 /** 残影点（院门口）。 */

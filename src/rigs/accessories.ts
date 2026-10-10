@@ -128,7 +128,7 @@ function clothCap(h: HumanoidInternal, o?: CapOpts): THREE.Group {
     const r = b.r.map((rr, i) => Math.max(rr, band.r[i]! * minSc));
     return ringAt(fit, { r, y: band.y }, (_i, a) => 1 + 0.02 * front(a) * Math.min(1, dy / H), (_i, a) => dy + frontLift * front(a), dz);
   };
-  const bandRow = (dy: number, pad: number): Float32Array => ringFit(dy, pad, 0.965);
+  const bandRow = (dy: number, pad: number): Float32Array => ringFit(dy, pad, 0.92);
   const crownTop = Math.max(L.hairTop + 0.01 * k, y0 + 0.058 * k);
   const H = crownTop - y0;
   const front = (ang: number) => Math.max(0, Math.sin(ang)); // 1 = 正前
@@ -221,10 +221,11 @@ function feltHat(h: HumanoidInternal, o?: CapOpts): THREE.Group {
   bandAt(0.016 * k, 0.0045 * k);
   add(crownRings, 1.004, 0.03 * k);
   add(crownRings, 0.985, H * 0.62);
-  add(crownRings, 0.94, H * 0.86, 0.006 * k);
-  add(crownRings, 0.82, H * 0.98, 0.014 * k);
-  add(crownRings, 0.55, H * 1.0, 0.022 * k);
-  add(crownRings, 0.22, H * 0.99, 0.026 * k);
+  // 集成：凹折浅一点、只在顶面（真头上原来的深凹折压进了头顶的头发里 2cm）
+  add(crownRings, 0.94, H * 0.86, 0.002 * k);
+  add(crownRings, 0.82, H * 0.98, 0.006 * k);
+  add(crownRings, 0.55, H * 1.0, 0.012 * k);
+  add(crownRings, 0.22, H * 0.99, 0.015 * k);
   const last = crownRings[crownRings.length - 1]!;
   let cx = 0, cy = 0, cz = 0;
   for (let i = 0; i < N; i++) { cx += last[i * 3]!; cy += last[i * 3 + 1]!; cz += last[i * 3 + 2]!; }

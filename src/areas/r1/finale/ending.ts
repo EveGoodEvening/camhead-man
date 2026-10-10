@@ -626,6 +626,17 @@ export function buildNanke(ctx: AreaContext): NankeSet {
   crowd.computeBoundingSphere();
   crowd.frustumCulled = false;
   mini.add(crowd);
+  // 孩子是人群里单独的一套几何（子节点 'crowd.kids'；crowd 里那几格是零缩放的占位）：照样复制过来、上孩子的颜色
+  const kidSrc = crowdSrc.mesh.getObjectByName('crowd.kids') as THREE.InstancedMesh | undefined;
+  if (kidSrc) {
+    const kidsMesh = new THREE.InstancedMesh(kidSrc.geometry, crowd.material, Math.max(1, kidSrc.count));
+    kidsMesh.count = kidSrc.count;
+    kidsMesh.instanceMatrix.copy(kidSrc.instanceMatrix);
+    for (let i = 0; i < kidsMesh.count; i++) kidsMesh.setColorAt(i, col.set(kid[Math.floor(cr() * kid.length)]!));
+    kidsMesh.frustumCulled = false;
+    crowd.add(kidsMesh);
+    ctx.track({ dispose: () => kidsMesh.dispose() });
+  }
   // 小小的老周：门岗门口，戴着帽子、藏蓝衬衫，冲镜头摆手（身后一圈淡淡的魂影青）
   const miniZhou = createCharacter('zhou', { look: 'live', variant: 'cap', seed: 1960 });
   miniZhou.root.scale.setScalar(S);

@@ -22,7 +22,7 @@ const W_KNOTS: readonly (readonly [number, number])[] = [
   [0.15, 0.0718], [0.165, 0.0733], [0.18, 0.0741], [0.195, 0.0731], [0.21, 0.0694], [0.225, 0.061], [0.238, 0.047], [0.247, 0.029], [0.252, 0],
 ];
 const F_KNOTS: readonly (readonly [number, number])[] = [
-  [0.035, 0.078], [0.045, 0.0878], [0.06, 0.0938], [0.075, 0.0968], [0.09, 0.0985], [0.105, 0.0996], [0.12, 0.1006], [0.135, 0.1015],
+  [0.035, 0.079], [0.045, 0.0888], [0.06, 0.0952], [0.075, 0.0985], [0.09, 0.1003], [0.105, 0.1012], [0.12, 0.1018], [0.135, 0.1021],
   [0.15, 0.1022], [0.165, 0.1012], [0.18, 0.0965], [0.195, 0.0895], [0.21, 0.0805], [0.225, 0.0685], [0.238, 0.0514], [0.247, 0.031], [0.252, 0],
 ];
 const B_KNOTS: readonly (readonly [number, number])[] = [
@@ -144,7 +144,7 @@ export function headSurface(p: HeadParams): HeadSurface {
   const lipK = Math.max(0.25, 1 + 0.6 * S('lipFull'));
   const eyeK = 1 + 0.25 * S('eyeSize');
   const old = p.old && !deity;
-  const nlDepth = p.old ? 0.0017 : child ? 0 : 0.0005;
+  const nlDepth = p.old ? 0.0011 : child ? 0 : 0.0004;
   const features = (P: Readonly<V3>, n: Readonly<V3>): number => {
     const x = P[0], y = P[1], ax = Math.abs(x);
     const fr = sstep(0.15, 0.65, -n[2]);
@@ -157,10 +157,10 @@ export function headSurface(p: HeadParams): HeadSurface {
     d += 0.0009 * g2(ax - 0.034, y - 0.1438, 0.011, 0.0028) * fr;
     if (p.old) d += 0.0011 * g2(ax - 0.035, y - 0.1385, 0.012, 0.0035) * fr;
     d -= (0.0018 + (old ? 0.0012 : 0)) * g2(ax - 0.064, y - 0.168, 0.012, 0.016) * sf;
-    d += Math.max(0, 0.0024 * (1 + 0.6 * S('cheekbone'))) * g2(ax - 0.052, y - 0.13, 0.018, 0.014) * sf;
+    d += Math.max(0, 0.002 * (1 + 0.6 * S('cheekbone'))) * g2(ax - 0.053, y - 0.128, 0.019, 0.018) * sf;
     d += 0.0032 * S('cheekFull') * g2(ax - 0.046, y - 0.098, 0.019, 0.017) * sf;
-    if (old) d -= 0.0015 * g2(ax - 0.05, y - 0.106, 0.012, 0.012) * sf;
-    d += 0.0024 * g2(x, y - 0.09, 0.026, 0.016) * fr;
+    if (old) d -= 0.0007 * g2(ax - 0.054, y - 0.104, 0.016, 0.016) * sf;
+    d += 0.0022 * g2(x, y - 0.09, 0.034, 0.018) * fr;
     d += 0.0031 * lipK * g2(x, y - 0.0868, 0.0205, 0.0041) * fr - 0.0005 * g2(x, y - 0.0892, 0.004, 0.002) * fr;
     d += 0.0029 * lipK * g2(x, y - 0.0748, 0.0178, 0.0048) * fr;
     d -= 0.0018 * g2(x, y - 0.0808, 0.0245, 0.0017) * fr;
@@ -173,8 +173,8 @@ export function headSurface(p: HeadParams): HeadSurface {
       // 法令纹：鼻翼外侧 → 嘴角外侧的一道沟，外侧的脸颊鼓一点
       const ds = segDist(ax, y, 0.0195, 0.1085, 0.0315, 0.0735);
       const lateral = ax > 0.0195 + (0.1085 - y) * (0.012 / 0.035) ? 1 : 0.3;
-      d -= nlDepth * Math.exp(-((ds / 0.0028) ** 2)) * fr;
-      d += nlDepth * 0.6 * lateral * Math.exp(-(((ds - 0.0052) / 0.003) ** 2)) * fr;
+      d -= nlDepth * Math.exp(-((ds / 0.0034) ** 2)) * fr;
+      d += nlDepth * 0.7 * lateral * Math.exp(-(((ds - 0.006) / 0.0045) ** 2)) * fr;
     }
     d += nose(x, y) * frN;
     return d;
@@ -189,7 +189,8 @@ export function headSurface(p: HeadParams): HeadSurface {
     if (hair.hardEdge) return t * e;
     const ap = Math.abs(psi);
     const lo = hair.line ? hair.line(ap) : 0;
-    let grow = 0.18 + 0.82 * sstep(lo - hair.ramp, lo + 9 * DEG, alpha);
+    // 往后梳的发型（发髻、低髻）额前是贴着的：长厚得更慢
+    let grow = 0.18 + 0.82 * sstep(lo - hair.ramp, lo + (hair.bun ? 18 : 9) * DEG, alpha);
     if (hair.top) grow *= 0.18 + 0.82 * (1 - sstep(hair.top(ap) - 9 * DEG, hair.top(ap) + hair.ramp, alpha));
     return t * e * grow;
   };
@@ -400,6 +401,18 @@ export function addShell(out: HeadMeshData, surf: HeadSurface, seam: SeamU): voi
   for (let i = P0; i < pp.length / 3; i++) {
     const l = Math.hypot(nor[i * 3]!, nor[i * 3 + 1]!, nor[i * 3 + 2]!) || 1;
     out.nor[i * 3] = nor[i * 3]! / l; out.nor[i * 3 + 1] = nor[i * 3 + 1]! / l; out.nor[i * 3 + 2] = nor[i * 3 + 2]! / l;
+  }
+  // 下半张脸的着色法线往上偏一点（只改明暗、不改轮廓）：顶上来的灯（路灯、门灯）下，鼻子以下不再整片发黑像胡子
+  for (let r = 3; r < rows; r++) {
+    for (let c = 0; c <= N; c++) {
+      const i = at(r, c);
+      const y = out.pos[i * 3 + 1]!, z = out.pos[i * 3 + 2]!;
+      const w = (1 - sstep(0.105, 0.145, y)) * sstep(0.03, 0.06, y) * sstep(-0.03, -0.07, z) * sstep(0.2, 0.6, -out.nor[i * 3 + 2]!);
+      if (w <= 0) continue;
+      const ny = out.nor[i * 3 + 1]! + 0.22 * w;
+      const l = Math.hypot(out.nor[i * 3]!, ny, out.nor[i * 3 + 2]!) || 1;
+      out.nor[i * 3] = out.nor[i * 3]! / l; out.nor[i * 3 + 1] = ny / l; out.nor[i * 3 + 2] = out.nor[i * 3 + 2]! / l;
+    }
   }
   // 颈口一圈：法线 = 接缝法线（与脖子那边一模一样，缝上不出明暗台阶）
   for (let c = 0; c <= N; c++) {

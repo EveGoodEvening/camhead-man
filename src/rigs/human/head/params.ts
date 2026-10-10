@@ -78,7 +78,7 @@ const K = (pts: readonly (readonly [number, number])[]) => {
 /** 男式发际线：前额 126°，额角微微后退，鬓角，绕过耳朵，耳后落到后颈。 */
 const LINE_M = K([[0, 126], [20, 127], [38, 131], [55, 126], [68, 114], [75, 99], [80, 104], [86, 114], [101, 114], [110, 90], [120, 74], [140, 63], [160, 59], [180, 58]]);
 /** 女式：圆一点、没有鬓角。 */
-const LINE_F = K([[0, 128], [18, 127], [35, 124.5], [52, 120], [62, 116], [72, 110], [80, 112], [86, 115], [101, 115], [110, 92], [120, 76], [140, 64], [160, 60], [180, 59]]);
+const LINE_F = K([[0, 131], [7, 128.5], [18, 127], [35, 124.5], [52, 120], [62, 116], [72, 110], [80, 112], [86, 115], [101, 115], [110, 92], [120, 76], [140, 64], [160, 60], [180, 59]]);
 /** 老头的稀发：前额和额角都退了。 */
 const LINE_THIN = K([[0, 137], [22, 139], [38, 143], [55, 133], [68, 117], [75, 101], [80, 105], [86, 114], [101, 114], [110, 90], [120, 74], [140, 63], [160, 59], [180, 58]]);
 /** 碗盖：一圈平平的边（前额压低成刘海）。 */
@@ -100,8 +100,8 @@ export function hairDef(h: NormHair, female: boolean): HairDef {
     case 'flat_top': return { line, tTop: 0.012, tSide: 0.0055, tBack: 0.006, tNape: 0.0028, ramp: 1.3 * DEG, flat: 0.272 };
     case 'bun': return { line: LINE_F, tTop: 0.0058, tSide: 0.0046, tBack: 0.0052, tNape: 0.0034, ramp: 1.2 * DEG, bun: 'bun' };
     case 'long': return {
-      line: LINE_F, tTop: 0.0072, tSide: 0.0062, tBack: 0.0068, tNape: 0.0055, ramp: 1.2 * DEG, bun: 'chignon',
-      part: { psi: 0, depth: 0.0024, width: 2.4 * DEG }, clumps: 0.08,
+      line: LINE_F, tTop: 0.0062, tSide: 0.0058, tBack: 0.0066, tNape: 0.0055, ramp: 1.2 * DEG, bun: 'chignon',
+      part: { psi: 0, depth: 0.0028, width: 2.8 * DEG }, clumps: 0.08,
     };
     case 'child_bowl': return { line: LINE_BOWL, tTop: 0.0115, tSide: 0.0085, tBack: 0.009, tNape: 0.0075, ramp: 0.7 * DEG, clumps: 0.07, hardEdge: true };
   }

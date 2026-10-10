@@ -458,7 +458,7 @@ function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.Buf
   const body = [mb.build()];
   // 脸纸：格子 0 的 UV（别的格子靠 aCell 偏移）
   const fb = new MeshBuilder();
-  faceCard(fb, shell, { cy: K(V_CARD.cy), w: K(V_CARD.w), h: K(V_CARD.h) }, FACE_ELL, cellUv(cellRect(0)), K(0.002));
+  faceCard(fb, shell, { cy: K(V_CARD.cy), w: K(V_CARD.w), h: K(V_CARD.h) }, FACE_ELL, cellUv(cellRect(0)), K(0.0035), { rings: 6, seg: 20 });
   const face = fb.build();
   return { body, face, mouth: [0, K(1.29), shellFrontZ(shell, 0, K(1.29)) - K(0.004)], shell };
 }
@@ -669,7 +669,7 @@ function createVendor(o: PaperOpts): PaperRig {
   // 嘴部小片：取脸格子里嘴那一块（格子内 u 0.3–0.7、v 0.12–0.42），跟着脸纸的曲面、再往外 1.2mm
   const k = height / 1.58;
   const pb = new MeshBuilder();
-  faceCard(pb, vg.shell, { cy: V_CARD.cy * k, w: V_CARD.w * k, h: V_CARD.h * k }, FACE_ELL, cellUv(cellRect(cellIdx)), 0.002 * k + 0.0012,
+  faceCard(pb, vg.shell, { cy: V_CARD.cy * k, w: V_CARD.w * k, h: V_CARD.h * k }, FACE_ELL, cellUv(cellRect(cellIdx)), 0.0035 * k + 0.0012,
     { sub: [0.3, 0.7, 0.12, 0.42] });
   const patchSrc = pb.build();
   patchSrc.computeBoundingBox();
@@ -774,7 +774,7 @@ function createBoy(o: PaperOpts): PaperRig {
   faceCard(fb, shell, { cy: K(0.905), w: K(0.2), h: K(0.215) }, FACE_ELL, (u, v) => {
     const [fu0, fv0, fuw, fvh] = uvRect(U([0, 288, 224, 224]));
     return [fu0 + u * fuw, fv0 + v * fvh];
-  }, K(0.002));
+  }, K(0.0035), { rings: 6, seg: 20 });
   const faceGeo = withCell(mergeParts([{ geo: fb.build(), face: 1 }]), [0, 0]);
 
   const root = new THREE.Group();

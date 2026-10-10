@@ -146,43 +146,20 @@ function softenRim(rig: CharacterRig): void {
 }
 
 /**
- * 胡子的网格版（M4 第 2 轮）：kit 的胡子是 1px 的 LineSegments，1× 下看不见。换成几条 1cm 宽的白色扁带，从下巴垂到约 0.16m，
- * 挂在原胡子的父节点（头部插槽）上，原来的线段藏起来。材质自己一份，随区域释放。
+ * 土地的胡子（char2）：kit 的胡子现在本身就是一绺一绺垂到胸前（下巴往下 ≥ 0.16m）的白胡子网格，不再藏起来换扁带。
+ * 这里只给它一份本区域的材质：一点本色自发光（院里只有灯笼的红光照着，白胡子不该被染成红金色）、魂影温度。随区域释放。
  */
 function meshBeard(ctx: AreaContext, rig: CharacterRig): void {
-  const lines = rig.props.beard;
-  const slot = lines?.parent;
-  if (!lines || !slot) return;
-  lines.visible = false;
-  const mat = ctx.track(new THREE.MeshStandardMaterial({ color: '#EDEAE2', roughness: 0.95, side: THREE.DoubleSide, emissive: '#EDEAE2', emissiveIntensity: 0.08 }));
+  const beard = rig.props.beard as THREE.Mesh | undefined;
+  if (!beard || !(beard as THREE.Mesh).isMesh) return;
+  const src = beard.material as THREE.MeshStandardMaterial;
+  const mat = ctx.track(src.clone());
+  mat.emissive.set('#EDEAE2');
+  mat.emissiveMap = src.map;
+  mat.emissiveIntensity = 0.1;
   mat.userData.tempC = TEMP_C.yin;
-  const g = new THREE.Group();
-  g.name = 'beardMesh';
-  // 下巴底下那一绺（中间长、两边短，略往前飘），两撇八字胡
-  const strands: [number, number, number, number][] = [
-    // x, 长度, 往外撇（rad）, 前后（m）
-    [0, 0.16, 0, 0], [-0.012, 0.15, 0.05, 0.002], [0.012, 0.15, -0.05, 0.002], [-0.024, 0.13, 0.1, -0.002], [0.024, 0.13, -0.1, -0.002],
-    [-0.035, 0.1, 0.16, -0.006], [0.035, 0.1, -0.16, -0.006], [-0.006, 0.14, 0.02, 0.006], [0.006, 0.14, -0.02, 0.006],
-  ];
-  for (const [x, len, splay, dz] of strands) {
-    const geo = ctx.track(new THREE.PlaneGeometry(0.011, len).translate(0, -len / 2, 0));
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, 0.052, -0.06 + dz);
-    m.rotation.set(-0.12, 0, splay);
-    g.add(m);
-  }
-  for (const sx of [-1, 1]) {
-    const geo = ctx.track(new THREE.PlaneGeometry(0.045, 0.01).translate(sx * 0.0225, 0, 0));
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(sx * 0.004, 0.074, -0.068);
-    m.rotation.set(-0.2, 0, sx * -0.45);
-    g.add(m);
-  }
-  for (const c of g.children) {
-    c.raycast = () => {};
-    c.userData.noBounds = true;
-  }
-  slot.add(g);
+  beard.material = mat;
+  beard.visible = true;
 }
 
 /** 取景器里第一次瞅见土地时，他冲你招手（GDD §2.2“土地爷坐在马扎上冲你招手”，M4 第 2 轮）：左手（右手拄着拐杖）摆 2 秒。 */

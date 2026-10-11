@@ -276,7 +276,7 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
   };
   // 外沿：前 zKnee、后 zBack、半宽 Wlap 的圆角矩形（超椭圆 n = 6），按角度取点
   const zBack = 0.115 * s * Math.sqrt(p.bd) + gap;
-  const zMid = (zKnee + zBack) / 2, hz = (zBack - zKnee) / 2;
+  const zMid = (zKnee + zBack) / 2;
   const Wc0z = ctx.seams.WAIST.centre[2];
   const sp = (c: number, e: number) => Math.sign(c) * Math.pow(Math.abs(c), e);
   const P = new THREE.Vector3();
@@ -287,7 +287,14 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
     for (let j = 1; j < nRows; j++) ell.push(ell[j - 1]! + col[j]!.distanceTo(col[j - 1]!));
     const th = ((c % C) / C) * Math.PI * 2;
     const cs = Math.cos(th), sn = Math.sin(th);
-    const O = new THREE.Vector3(Wlap * sp(cs, 1 / 3), 0, zMid - hz * sp(sn, 1 / 3));
+    // fix2：侧面的列按“小腿后沿”分成两段：前半（膝前 → 小腿后）整段垂到脚背，后半（大腿底 → 臀）收在座面；
+    // 两段的分界两侧的列挨得很近，侧面的下摆在小腿后面是一道竖边，不是从脚踝斜到臀部的一大块楔子
+    const s1 = sp(sn, 1 / 3);
+    const zCalf = zKnee + 0.165 * s;
+    const Oz = s1 >= 0 ? zCalf - (zCalf - zKnee) * Math.min(1, s1 * 1.15)
+      : -s1 <= 0.56 ? zCalf + 0.006 * s
+        : zCalf + 0.03 * s + (zBack - zCalf - 0.03 * s) * Math.pow(Math.max(0, (-s1 - 0.6) / 0.4), 1.3);
+    const O = new THREE.Vector3(Wlap * sp(cs, 1 / 3), 0, Oz);
     // 这一点的沿高：前、侧 = 腿面（侧面 = 髋关节高）；后面逐渐降到座面
     const backness = smooth01(-0.02 * s, zBack * 0.7, O.z);
     const E = lapY(O.x) * (1 - backness) + ySeat * backness;
@@ -307,7 +314,9 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
       const u = k / K;
       const q = new THREE.Vector3().lerpVectors(from, O, u);
       const ylin = from.y + (E - from.y) * Math.pow(u, backness > 0.5 ? 0.6 : 1.6);
-      const onLap = q.z < -0.04 * s ? lapY(q.x) : -Infinity;
+      // fix2：膝头在腿面前段把布顶起来一点（两个软鼓包、中间凹），腿面不是一整块平板
+      const kneeTop = 0.012 * s * Math.exp(-Math.pow((Math.abs(q.x) - hx) / (0.75 * rt), 2)) * smooth01(zKnee + 0.22 * s, zKnee + 0.05 * s, q.z);
+      const onLap = q.z < -0.04 * s ? lapY(q.x) + kneeTop : -Infinity;
       q.y = Math.max(ylin, onLap);
       path.push(q);
     }
@@ -321,10 +330,14 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
         path.push(O.clone().addScaledVector(outDir, Math.sin(a) * rc).add(new THREE.Vector3(0, -(1 - Math.cos(a)) * rc, 0)));
       }
       const start = path[path.length - 1]!.clone();
-      // 下垂到多低：膝前落到脚背上，越往后（侧面靠座位那头）越短——侧面的下摆是一条从膝下斜向座面的线，不是一整块方板
-      const rear = smooth01(zKnee + 0.12 * s, -0.04 * s, O.z);
+      // fix2：下垂到多低——小腿前后（膝下 ~15cm 以内）整段垂到脚背上，再往后（小腿后面、大腿底下）就收在大腿底面：
+      // 侧面的下摆是“竖直落到脚踝 → 小腿后面一道竖边 → 大腿底面”，不是一条从膝下斜到座面的线（读成一块楔子）
+      const rear = smooth01(zCalf + 0.004 * s, zCalf + 0.024 * s, O.z);
       const yEnd = yHemSeat + (ySeat - 0.03 * s - yHemSeat) * rear;
-      // 侧帘下半截往里收（贴着小腿后面的空当），前帘两膝之间往里兜一道垂褶
+      // 侧帘往里收、贴着小腿（不是从大腿外沿直上直下的一块板），前帘两膝之间往里兜一道垂褶
+      const side = smooth01(0.25, 0.75, Math.abs(cs)) * (1 - rear);
+      const calfX = hx + 0.062 * s + gap;
+      const sideIn = Math.max(0, Math.abs(O.x) - calfX);
       const nDrop = 7;
       for (let k = 1; k <= nDrop; k++) {
         const f = k / nDrop;
@@ -332,7 +345,8 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
         q.y = start.y - (start.y - yEnd) * f;
         q.addScaledVector(outDir, -(qipao ? 0.095 : 0.06) * s * between * Math.sin(Math.min(1, f * 1.5) * Math.PI / 2));
         // 膝头把布顶出来：前帘在两膝处鼓、往下渐平（站在正前方看不再是一块平板）
-        q.addScaledVector(outDir, 0.016 * s * kneeBump * (1 - f) * (1 - rear));
+        q.addScaledVector(outDir, (qipao ? 0.016 : 0.024) * s * kneeBump * (1 - f) * (1 - rear));
+        q.x -= Math.sign(O.x) * sideIn * side * Math.sin(Math.min(1, f * 1.3) * Math.PI / 2) * 0.85;
         q.addScaledVector(outDir, -0.025 * s * rear * f * f);
         path.push(q);
       }

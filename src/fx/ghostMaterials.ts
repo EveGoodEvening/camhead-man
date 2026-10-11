@@ -86,6 +86,8 @@ void main() {
   col *= mix( 1.0, 0.15 + 1.9 * tl, detail );
   // 原色：按亮度归一的底色 × 贴图，只取色相，亮度跟魂影走；边缘仍是魂色
   vec3 hue = min( alb / max( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.02 ), vec3( 3.0 ) );
+  // char2 fix2：很暗的贴图像素（瞳孔、睫毛线）按亮度归一后色相被放大成大红：暗处的色相淡回中性
+  hue = mix( vec3( 1.0 ), hue, smoothstep( 0.05, 0.2, dot( alb, vec3( 0.3, 0.59, 0.11 ) ) ) );
   col = mix( col, hue * dot( col, vec3( 0.3, 0.59, 0.11 ) ), uBaseAmt * ( 1.0 - 0.7 * fres ) );
   // 人物保留衣料明暗，避免灰度布纹把深色裤子抬成白色塑料；无人物参数的场景魂影不变。
   if ( uAlbedoAmt > 0.0 ) {
@@ -94,6 +96,8 @@ void main() {
     col *= mix( 1.0, surface * shape, uAlbedoAmt );
   }
   float a = uOpacity * mix( 0.42 + 0.6 * detail + 1.1 * fres, 1.55 + 0.4 * fres, uSolid ) * mix( 1.0, band, 0.5 );
+  // char2 fix2：贴图上墨色的五官（瞳孔、睫毛）是“实”的：暗处不透明一点，不让身后的红墙透出来读成红眼睛
+  a += 0.55 * detail * ( 1.0 - smoothstep( 0.03, 0.16, dot( tex, vec3( 0.3, 0.59, 0.11 ) ) ) );
   gl_FragColor = vec4( col, clamp( a, 0.0, 1.0 ) );
   #include <fog_fragment>
 }
@@ -140,12 +144,16 @@ void main() {
   vec3 col = uColor * ( 0.55 * up + 1.4 * uRim * fres ) * line * ( 1.0 - 0.3 * drop );
   col *= mix( 1.0, 0.45 + 1.0 * tl, detail );
   vec3 hue = min( alb / max( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.02 ), vec3( 3.0 ) );
+  // char2 fix2：很暗的贴图像素（瞳孔、睫毛线）按亮度归一后色相被放大成大红：暗处的色相淡回中性
+  hue = mix( vec3( 1.0 ), hue, smoothstep( 0.05, 0.2, dot( alb, vec3( 0.3, 0.59, 0.11 ) ) ) );
   col = mix( col, hue * dot( col, vec3( 0.3, 0.59, 0.11 ) ), uBaseAmt * ( 1.0 - 0.7 * fres ) );
   if ( uAlbedoAmt > 0.0 ) {
     float surface = 0.55 + 0.45 * sqrt( clamp( dot( alb, vec3( 0.3, 0.59, 0.11 ) ), 0.0, 1.0 ) );
     col *= mix( 1.0, surface, uAlbedoAmt );
   }
   float a = uOpacity * mix( 0.75 + 0.5 * fres, 1.3, uSolid );
+  // char2 fix2：贴图上墨色的五官（瞳孔、睫毛）是“实”的：暗处不透明一点，不让身后的红墙透出来读成红眼睛
+  a += 0.55 * detail * ( 1.0 - smoothstep( 0.03, 0.16, dot( tex, vec3( 0.3, 0.59, 0.11 ) ) ) );
   gl_FragColor = vec4( col, clamp( a, 0.0, 1.0 ) );
   #include <fog_fragment>
 }

@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { RENDER_ORDER, TEMP_C } from '../../data/render';
 import { isSharedMaterial } from '../../fx/materials';
-import { createGhostMaterial, createReplayMaterial } from '../../fx/ghostMaterials';
+import { createGhostMaterial, createReplayMaterial, ghostPrepassMaterial } from '../../fx/ghostMaterials';
 import { DEV_CHECKS } from '../../core/log';
 import { REGION_LEGACY as HEAD_LEGACY, buildHead } from './head';
 import { REGION_LEGACY as LOWER_LEGACY, buildLower } from './lower';
@@ -199,6 +199,25 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     sphereR += 0.05 * s;
   }
 
+  // fix2：领子的深度预通道（只在魂影/回放里显示）：领子先写深度，领子里面的那截脖子画不上（不再是“圈里套一根管子”），
+  // 领子后半圈的里壁也被脖子挡住。共用领子的几何与骨架，一次 draw call。
+  const collarPre: THREE.SkinnedMesh | null = (() => {
+    const c = skinnedMeshes.find(m => m.name === 'collar');
+    if (!c || !c.parent) return null;
+    const pre = new THREE.SkinnedMesh(c.geometry, ghostPrepassMaterial());
+    pre.name = 'collarPrepass';
+    pre.bind(skeleton, c.bindMatrix);
+    pre.visible = false;
+    pre.frustumCulled = false;
+    pre.userData.noBounds = true;
+    pre.userData.noOcclude = true;
+    pre.userData.irHide = true;
+    pre.userData.sharedGeometry = true;
+    pre.raycast = () => {};
+    c.parent.add(pre);
+    return pre;
+  })();
+
   const headMesh: THREE.Object3D | null = spec.head === 'none' ? null : parts.head ?? null;
 
   if (style?.rim !== undefined) {
@@ -351,7 +370,12 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
         continue;
       }
       if (!baseOrder.has(mesh)) baseOrder.set(mesh, mesh.renderOrder);
-      mesh.renderOrder = Math.max(mesh.renderOrder, order);
+      // fix2：配件（袖箍、帽子、篮子……）包在身子外面：同一档里比身子晚画（身子先写深度，配件被身子挡住的那半圈画不上）
+      mesh.renderOrder = Math.max(baseOrder.get(mesh)!, order) + (extraMeshes.includes(mesh) ? 1 : 0);
+    }
+    if (collarPre) {
+      collarPre.visible = on && opacity > 0.3;
+      collarPre.renderOrder = order - 1;
     }
   };
 
@@ -386,6 +410,7 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
       }
       setMaterialOpacity(mat, a);
     }
+    if (collarPre) collarPre.visible = (mode === 'ghost' || mode === 'replay') && a > 0.3;
   };
 
   // ------------------------------------------------ 动作

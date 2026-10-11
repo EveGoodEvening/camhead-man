@@ -110,9 +110,11 @@ export function pleatTube(
   const K = rad.length;
   const centre = (k: number) => a.clone().lerp(b, k / (K - 1));
   const n = pleats * 2;
+  // fix2：褶从肩头往下才出来（肩头一圈是圆的，不是一圈尖角）
+  const ampAt = (k: number) => (o?.topCap ? amp * Math.min(1, 0.15 + (k / Math.max(1, K - 1)) * 1.7) : amp);
   const pt = (k: number, i: number) => {
     const phi = (i / n) * TAU;
-    const r = rad[k]! * (1 + ((i % 2 === 0 ? 1 : -1) * amp) / rad[k]!);
+    const r = rad[k]! * (1 + ((i % 2 === 0 ? 1 : -1) * ampAt(k)) / rad[k]!);
     return centre(k).addScaledVector(e1, r * Math.cos(phi)).addScaledVector(e2, r * sq * Math.sin(phi));
   };
   for (let i = 0; i < n; i++) {
@@ -125,9 +127,18 @@ export function pleatTube(
     }
     for (let k = 0; k + 1 < K; k++) mb.bridge([A[k]!, B[k]!], [A[k + 1]!, B[k + 1]!], false, centre(k).add(centre(k + 1)).multiplyScalar(0.5));
     if (o?.topCap) {
-      const top = a.clone().addScaledVector(T, -rad[0]! * 0.6);
+      // fix2：圆顶（中间一圈 + 顶点），不是一个尖锥
+      const mid = (j: number) => {
+        const phi = (j / n) * TAU, r = rad[0]! * 0.74;
+        return a.clone().addScaledVector(T, -rad[0]! * 0.36).addScaledVector(e1, r * Math.cos(phi)).addScaledVector(e2, r * sq * Math.sin(phi));
+      };
+      const ma = mid(i), mb2 = mid(i + 1);
+      const mA = mb.v([ma.x, ma.y, ma.z], ...rect(i / n, 0.02), -1), mB = mb.v([mb2.x, mb2.y, mb2.z], ...rect((i + 1) / n, 0.02), -1);
+      const top = a.clone().addScaledVector(T, -rad[0]! * 0.55);
       const t = mb.v([top.x, top.y, top.z], ...rect((i + 0.5) / n, 0), -1);
-      mb.tri(A[0]!, B[0]!, t, centre(0).addScaledVector(T, rad[0]! * 0.5));
+      const ref = centre(0).addScaledVector(T, rad[0]! * 0.5);
+      mb.bridge([mA, mB], [A[0]!, B[0]!], false, ref);
+      mb.tri(mA, mB, t, ref);
     }
     if (o?.lip) {
       // 袖口往里折一圈（看不见里面的空）
@@ -331,7 +342,8 @@ export function collarBand(mb: MeshBuilder, y0: number, y1: number, a0: number, 
     const ring: number[] = [];
     for (let i = 0; i <= seg; i++) {
       const phi = -Math.PI / 2 + (i / seg) * TAU;
-      ring.push(mb.v([r.a * Math.cos(phi), r.y, cz - r.b * Math.sin(phi)], ...rect(i / seg, j === 0 ? 1 : 0.1), j === 2 ? group + 1 : group));
+      // fix2：往里翻的那一圈取领子中间的布色（原来取到上沿的金边，下巴底下一圈亮环）
+      ring.push(mb.v([r.a * Math.cos(phi), r.y, cz - r.b * Math.sin(phi)], ...rect(i / seg, j === 0 ? 1 : j === 2 ? 0.6 : 0.1), j === 2 ? group + 1 : group));
     }
     return ring;
   });

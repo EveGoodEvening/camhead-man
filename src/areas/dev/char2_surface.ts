@@ -3,7 +3,7 @@
 // scripts/selftest/char2.mjs 自动跑全部 'char2.*'。
 //   char2.surface_fabric    衣料/衣服贴图：织纹细、总起伏 ≤ 14%、没有 3–6cm 周期的横条（行亮度自相关 < 0.15）、尺寸不变
 //   char2.surface_walk      行走 1s：膝屈峰值 ≥ 0.8、手臂与同侧腿反向、肩与骨盆反向扭、脚着地不陷不浮、踝动作
-//   char2.surface_posture   驼背：王奶奶（kyphosis 0.35）头比胸口靠前 ≥ 6cm；老人站姿膝微屈；脚掌贴地；姿势表；坐高；呼吸
+//   char2.surface_posture   驼背：王奶奶（kyphosis 0.42）头比胸口靠前 ≥ 6cm；老人站姿膝微屈；脚掌贴地；姿势表；坐高；呼吸
 //   char2.surface_programs  12 种角色 × 4 种外观建两遍、画两遍：第二遍不新增着色器程序；皮肤/衣料粗糙度
 //   char2.surface_hands     常光下手的平均亮度不比脸（眼睛以下）亮 5% 以上（PLAN §3.4）
 
@@ -267,7 +267,7 @@ registerSelftest('char2.surface_posture', () => {
   const r = report();
   const wangSpec = { height: 1.5, build: 'hunch' as const, shirt: '#5B6E8C', pants: '#2B2A2E', head: 'human' as const, sleeves: 'long' as const };
   const wangFace = { skin: '#C99A78', hair: '#8D8A86', hairStyle: 'bun' as const, age: 'old' as const, female: true };
-  const wang = createHumanoidInternal(wangSpec, wangFace, { profile: { kyphosis: 0.35 } });
+  const wang = createHumanoidInternal(wangSpec, wangFace, { profile: { kyphosis: 0.42 } });
   wang.update(1 / 60, 0);
   const fw = headForward(wang);
   const wangDef = createHumanoidInternal(wangSpec, wangFace);
@@ -279,7 +279,7 @@ registerSelftest('char2.surface_posture', () => {
   const young = createHumanoidInternal({ height: 1.73, shirt: '#4A5566', pants: '#2E3440', head: 'human' }, { skin: '#C99A78', hair: '#15120f', hairStyle: 'crop', age: 'young' });
   young.update(1 / 60, 0);
   const fwYoung = headForward(young);
-  r.t('驼背：王奶奶（kyphosis 0.35）头比胸口靠前 ≥ 6cm；陆师傅（0.08）只微微前探（< 王）；年轻人 < 3cm',
+  r.t('驼背：王奶奶（kyphosis 0.42，fix2）头比胸口靠前 ≥ 6cm；陆师傅（0.08）只微微前探（< 王）；年轻人 < 3cm',
     fw >= 0.06 && fwLu < fw && fwYoung < 0.03, `王 ${fx(fw)}（缺省 hunch 0.21：${fx(fwDef)}）陆 ${fx(fwLu)} 年轻 ${fx(fwYoung)}`);
   r.t('老人站姿膝微屈（王：膝 < −0.05）、年轻人站直', wang.joints.kneeL.rotation.x < -0.05 && Math.abs(young.joints.kneeL.rotation.x) < 1e-6, `王 ${fx(wang.joints.kneeL.rotation.x)}`);
   // 脚掌贴地：站、坐、蹲……时脚（踝的世界俯仰）≈ 水平

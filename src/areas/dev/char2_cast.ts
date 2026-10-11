@@ -49,7 +49,19 @@ function pointsIn(m: THREE.Mesh, frame: THREE.Object3D): THREE.Vector3[] {
   const mat = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
   const pos = m.geometry.attributes.position as THREE.BufferAttribute;
   const out: THREE.Vector3[] = [];
-  for (let i = 0; i < pos.count; i++) out.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mat));
+  // fix2：蒙皮的配件（袖箍）先按当前骨骼变换到姿势里的位置
+  const sk = (m as THREE.SkinnedMesh).isSkinnedMesh ? (m as THREE.SkinnedMesh) : null;
+  if (sk) {
+    let top: THREE.Object3D = sk;
+    while (top.parent) top = top.parent;
+    top.updateMatrixWorld(true);
+    sk.skeleton.update();
+  }
+  for (let i = 0; i < pos.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+    if (sk) sk.applyBoneTransform(i, v);
+    out.push(v.applyMatrix4(mat));
+  }
   return out;
 }
 /** 网格上法线接近水平（|n.y| < 0.5）的顶点：帽身的侧壁（帽檐的上下面是平的，不算）。 */
@@ -83,7 +95,7 @@ const PROPS: Readonly<Partial<Record<CharacterKind, readonly string[]>>> = {
 };
 /** 每件配件最多几个网格（PLAN §3.6：眼镜 1、双反 ≤ 2……） */
 const ACC_MESHES: Readonly<Record<string, number>> = {
-  glasses: 1, tlr: 2, cap: 1, hat: 2, hardHat: 1, beard: 1, mug: 1, basket: 1, scarf: 1, armband: 1, bun: 2, tail: 1, cane: 3,
+  glasses: 1, tlr: 2, cap: 1, hat: 2, hardHat: 2, beard: 1, mug: 1, basket: 1, scarf: 1, armband: 1, bun: 2, tail: 1, cane: 3,
 };
 
 registerSelftest('char2.cast_props', () => {
@@ -230,7 +242,15 @@ registerSelftest('char2.cast_fit', () => {
   // ---- 袖箍半径 ≈ 0.066s；发簪在发髻上（头后上方）
   {
     const c = createCharacter('zhou');
-    const ap = meshesOf(c.props.armband).flatMap(m => pointsIn(m, c.joints.shoulderL));
+    // fix2：袖箍蒙在袖子上：按绑定姿势量（几何在根空间，减去 shoulderL 的绑定位置）
+    const shp = c.joints.shoulderL.position, spp = c.joints.spine.position;
+    const sb: [number, number, number] = [shp.x, 0.95 * (c.height / 1.75) + spp.y + shp.y, shp.z];
+    const ap = meshesOf(c.props.armband).flatMap(m => {
+      const pos = m.geometry.attributes.position as THREE.BufferAttribute;
+      const out: THREE.Vector3[] = [];
+      for (let i = 0; i < pos.count; i++) out.push(new THREE.Vector3().fromBufferAttribute(pos, i).sub(new THREE.Vector3(...sb)));
+      return out;
+    });
     const rmax = Math.max(...ap.map(p => Math.hypot(p.x, p.z)));
     r.t('袖箍半径 ≈ 0.066s（±3mm）', Math.abs(rmax - 0.066) < 0.003, rmax.toFixed(4));
     c.dispose();

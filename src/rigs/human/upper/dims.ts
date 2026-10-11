@@ -54,12 +54,14 @@ export function upperDims(_spec: Readonly<HumanoidSpec>, p: Readonly<BodyProfile
   const bWb = Wr.pos[3 * q * 3 + 2]! - Wr.centre[2];
   const xS = b.shoulderR[0], yS = b.shoulderR[1];
   const yC = layout.collarY;
-  const ySt = yS + (female ? 0.006 : old ? 0.016 : child ? 0.02 : 0.025) * s;
+  // fix2：女人溜肩（肩顶圈低在肩关节下面一点，肩线从脖子斜着下来，不是男人的方肩）
+  const ySt = yS + (female ? -0.006 : old ? 0.016 : child ? 0.02 : 0.025) * s;
   const NT = seams.NECK_TOP;
   const nq = NT.count / 4;
   const ntA = NT.pos[0]! - NT.centre[0];
   const ntB = Math.hypot(NT.pos[nq * 3 + 2]! - NT.centre[2], NT.pos[nq * 3 + 1]! - NT.centre[1]);
-  const armK = (child ? 0.8 : female ? 0.88 : old ? 0.93 : 1) * (stout ? 1.1 : p.build === 'slim' ? 0.94 : 1) * (deity ? 1.05 : 1);
+  // fix2：孩子的胳膊肉乎乎的（原来 0.8，细得像缩小的大人）
+  const armK = (child ? 0.9 : female ? 0.88 : old ? 0.93 : 1) * (stout ? 1.1 : p.build === 'slim' ? 0.94 : 1) * (deity ? 1.05 : 1);
   const handK = child ? 0.75 : female ? 0.9 : 1;
   const pad = (g?.top === 'cotton_padded' ? 0.014 : g?.top === 'jacket' ? 0.006 : g?.top === 'zhongshan' ? 0.003 : 0) * s;
   // 腋下：胸侧收到胳膊内侧（绑定姿势胳膊竖直下垂，不能插进躯干）
@@ -69,7 +71,7 @@ export function upperDims(_spec: Readonly<HumanoidSpec>, p: Readonly<BodyProfile
   const nbA = ntA * (humanHead ? 1.24 : 1.13), nbB = ntB * (humanHead ? 1.3 : 1.22);
   const nbC = new THREE.Vector3(0, yC - 0.008 * s * (child ? 0.9 : 1) + (humanHead ? 0.006 * s : 0), 0.003 * s);
   return {
-    s, female, child, old, deity, stout, hunch, kyph: Math.min(1.4, p.kyphosis / 0.25),
+    s, female, child, old, deity, stout, hunch, kyph: Math.min(1.7, p.kyphosis / 0.25),
     W: s * p.bw, D: s * p.bd,
     yW, aW, bWf, bWb, ySpine: b.spine[1], xS, yS, ySt, yC, hA, pad, armK, handK,
     armRx: 0.044 * s * armK, armRz: 0.049 * s * armK,
@@ -99,7 +101,7 @@ export function section(d: UpperDims, p: Readonly<BodyProfile>, h: number, out: 
   const armIn = d.xS - d.armRx * 0.9;
   let aChest = Math.min(d.aW * 1.05, armIn);
   if (d.female) aChest = Math.min(d.aW * 1.06, armIn - 0.004 * s);
-  const aTop = d.xS + (d.female ? -0.006 : d.old ? -0.001 : 0.003) * s;
+  const aTop = d.xS + (d.female ? -0.014 : d.old ? -0.001 : 0.003) * s;
   const waistA = d.female ? 0.15 * W * p.waistTaper : d.child ? d.aW * 0.99 : d.aW * 1.005;
   const hs = [0, 0.2, 0.42, 0.6, hA, (hA + 1) / 2, 1];
   const as = [d.aW, waistA, d.child ? d.aW * 0.97 : Math.max(waistA, aChest * 0.985), aChest, aChest * (d.female ? 0.985 : 0.99), aChest * 0.96, aTop];
@@ -107,18 +109,21 @@ export function section(d: UpperDims, p: Readonly<BodyProfile>, h: number, out: 
   const base = 0.104 * s * (1 + (p.bd - 1) * 0.5);
   void D;
   const chestF = d.female ? 0.95 : d.old ? 0.97 : d.child ? 0.98 : 1;
-  const bfs = [d.bWf, base * 1.0, base * 1.06 * chestF, base * 1.12 * chestF, base * 1.13 * chestF, base * 1.07 * chestF, base * 0.93 * (d.female ? 0.93 : 1)];
-  const bbs = [d.bWb, base * 0.95, base * 0.96, base * 0.99, base * 1.02, base * 1.03, base * 0.9];
+  // fix2：女人腰节前后也收（侧面看得出腰），后背上半略薄
+  const wf = d.female ? 0.9 : 1;
+  const bfs = [d.bWf, base * 1.0 * wf, base * 1.06 * chestF, base * 1.12 * chestF, base * 1.13 * chestF, base * 1.07 * chestF, base * 0.93 * (d.female ? 0.93 : 1)];
+  const bbs = [d.bWb, base * 0.95 * (d.female ? 0.93 : 1), base * 0.96, base * 0.99, base * 1.02 * (d.female ? 0.96 : 1), base * 1.03 * (d.female ? 0.96 : 1), base * 0.9];
   out.a = spline(hs, as, h) + d.pad;
   out.bf = spline(hs, bfs, h) + d.pad;
   out.bb = spline(hs, bbs, h) + d.pad;
   // 驼背：上背鼓起（胸椎后凸），前胸略平
   // fix1：驼背的背更圆（上背一个鼓包，不是一块斜板）
   // （老周 kyph 1.0 不变：背后的线缆平面测试；王奶奶 1.4 多鼓 2cm）
-  if (d.kyph > 0) out.bb += 0.022 * s * Math.min(1, d.kyph) * gauss(h - 0.8, 0.28) + 0.05 * s * Math.max(0, d.kyph - 1) * gauss(h - 0.8, 0.22);
+  // fix2：王奶奶（kyph 1.4）的驼峰更大、更靠上，是一个圆背，不是腰上一折
+  if (d.kyph > 0) out.bb += 0.022 * s * Math.min(1, d.kyph) * gauss(h - 0.8, 0.28) + 0.085 * s * Math.max(0, d.kyph - 1) * gauss(h - 0.84, 0.24);
   out.n = spline([0, 0.45, 0.75, 1], [3, 2.85, 2.6, 2.4], h);
   // 老人肩往前扣
-  out.zc = d.old || d.hunch ? -0.015 * s * Math.min(1, d.kyph + 0.3) * THREE.MathUtils.smoothstep(h, 0.55, 1) : 0;
+  out.zc = d.old || d.hunch ? -(0.015 * Math.min(1, d.kyph + 0.3) + 0.05 * Math.max(0, d.kyph - 1)) * s * THREE.MathUtils.smoothstep(h, 0.55, 1) : 0;
   return out;
 }
 
@@ -135,15 +140,17 @@ export function torsoPoint(d: UpperDims, p: Readonly<BodyProfile>, t: number, h:
   const front = cz < 0 ? Math.pow(-cz, 1.5) * Math.sqrt(Math.max(0, 1 - Math.abs(cx))) : 0;
   const back = cz > 0 ? Math.pow(cz, 1.5) * Math.sqrt(Math.max(0, 1 - Math.abs(cx))) : 0;
   // 肚子（胖子、土地：前面圆鼓）
-  const belly = p.belly + (d.child ? 0.01 * s : 0);
+  const belly = p.belly + (d.child ? 0.018 * s : 0);
   // fix1：土地的酒桶肚更大、更靠下（腰带上下最鼓）
   if (belly > 0) z -= belly * (d.deity ? 1.5 : 0.8) * gauss(h - (d.deity ? 0.08 : 0.3), d.deity ? 0.4 : 0.22) * front;
   // 女：胸
   if (d.female && p.bust > 0) {
-    const yb = d.yS - 0.18 * s;
+    // fix2：胸更明显（侧面看得出来）：两团软的体积，下沿比上沿收得快（上缓下陡）
+    const yb = d.yS - 0.17 * s;
     for (const sx of [-1, 1]) {
-      const k = gauss(x - sx * 0.055 * s, 0.062 * s) * gauss(y - yb, 0.06 * s);
-      z -= 0.021 * s * p.bust * k * Math.min(1, front * 2.2);
+      const dy = y - yb;
+      const k = gauss(x - sx * 0.056 * s, 0.058 * s) * gauss(dy, (dy > 0 ? 0.075 : 0.045) * s);
+      z -= 0.032 * s * p.bust * k * Math.min(1, front * 2.2);
     }
   }
   // 男成年：胸肌的平面转折（±3mm）

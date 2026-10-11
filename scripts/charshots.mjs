@@ -227,12 +227,15 @@ try {
         ['lu', {}, 'raise_arm', 'lu_raise'], ['neighbor', { seed: 2008 }, 'crouch', 'neighbor_crouch'], ['bride', {}, 'sit', 'bride_sit']];
       for (const [kind, opts, p, tag] of items) {
         if (!wantKind(tag)) continue;
-        await spawn({ op: 'spawn', clear: true, kind, opts, pose: p, pos: [ST[0], 0, ST[1]], yaw: 0, steps: 20, speed: p === 'walk' ? 1.2 : 0 });
+        // fix2：走路停在摆臂最大的那一帧（20 帧正好停在手臂经过身侧的相位）
+        await spawn({ op: 'spawn', clear: true, kind, opts, pose: p, pos: [ST[0], 0, ST[1]], yaw: 0, steps: p === 'walk' ? 11 : 20, speed: p === 'walk' ? 1.2 : 0 });
         for (const [vt, yaw] of [['q34', 40], ['side', 90], ['front', 0]]) {
           if (vt === 'front' && !VIEWS?.includes('front')) continue; // front：只在 --views 明确要求时（before/ 只有 q34、side）
           if (!wantView(vt)) continue;
           await ev(([y]) => window.__T.rot(y), [yaw]);
-          await pose(F(2.8, 0.95), [ST[0], 0.7, ST[1]], 40);
+          // fix2：举手的姿势按举起来的手取景（原来画面上沿切在下巴，看不见举起的胳膊）
+          if (p === 'raise_arm') await pose(F(3.6, 1.3), [ST[0], 1.08, ST[1]], 44);
+          else await pose(F(2.8, 0.95), [ST[0], 0.7, ST[1]], 40);
           await shoot(`pose_${tag}_${vt}`);
         }
       }

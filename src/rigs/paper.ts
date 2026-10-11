@@ -143,6 +143,14 @@ function paintShell(g: CanvasRenderingContext2D, r: Rect, hair: string, seed: nu
   // 中分：一道浅色的头路
   g.fillStyle = 'rgba(150,120,100,0.55)';
   g.fillRect(cx - 1, r[1], 2, r[3] * 0.42);
+  // fix2：下巴底下、腮帮子底下是纸面的肉色（不是一圈黑头发裹到下巴底下，正面看像一块黑胡子）
+  const grd = g.createLinearGradient(0, r[1] + r[3] * 0.62, 0, r[1] + r[3] * 0.8);
+  grd.addColorStop(0, 'rgba(242,233,218,0)');
+  grd.addColorStop(1, 'rgba(242,233,218,1)');
+  g.fillStyle = grd;
+  g.beginPath();
+  g.ellipse(cx, r[1] + r[3], r[2] * 0.3, r[3] * 0.4, 0, 0, Math.PI * 2);
+  g.fill();
   g.restore();
 }
 
@@ -471,7 +479,8 @@ function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.Buf
     sectorLoft(mb, [hem, inner], wholeRing(rectUv(R.lip), 24), { group: 2, inside: y => new THREE.Vector3(0, y - K(0.05), 0) });
   }
   // 立领、脖子
-  collarBand(mb, K(1.2), K(1.248), K(0.084), K(0.074), K(0.074), K(0.065), 0, rectUv(R.collar), 3);
+  // fix2：立领高一点、领口往里翻到头壳底下（下巴和领子之间不再露出一圈亮边）
+  collarBand(mb, K(1.2), K(1.262), K(0.084), K(0.074), K(0.074), K(0.065), 0, rectUv(R.collar), 3, 0.82);
   sectorLoft(mb, [{ y: K(1.21), a: K(0.047), bf: K(0.045), bb: K(0.047) }, { y: K(1.275), a: K(0.045), bf: K(0.043), bb: K(0.045) }],
     wholeRing(rectUv(R.skin), 12), { group: 5 });
   // 褶袖（喇叭口）+ 袖口折边 + 剪纸手

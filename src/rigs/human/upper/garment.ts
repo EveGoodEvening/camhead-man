@@ -222,7 +222,7 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
       }
       rows.push(row);
     }
-    slab(mb, rows, 0.0042 * s, pc.top, skinAt, 0.0025 * s);
+    slab(mb, rows, 0.003 * s, pc.top, skinAt, 0.0025 * s);
     if (buttonOn) {
       const hb = front(cx, yTop + 0.004 * s - flap * 0.62);
       if (hb) button(mb, hb.p.clone().addScaledVector(hb.n, 0.0034 * s), hb.n, 0.0045 * s, 0.002 * s, pc.top, skinAt(hb.p));
@@ -232,8 +232,9 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
   const yChest = d.yS - 0.06 * s;
   const fK = d.female ? 0.85 : d.child ? 0.8 : 1;
   if (pockets === 'chest2' || pockets === 'chest1') {
-    const w = 0.1 * s * fK, hgt = 0.12 * s * fK;
-    for (const sx of pockets === 'chest1' ? [-1] : [-1, 1]) pocket(sx * 0.076 * W * fK, yChest, w, hgt, 0.034 * s * fK, pockets === 'chest2');
+    // fix2：胸兜窄一点、离门襟远一点，两个袋盖之间有空当（原来两片袋盖连成胸前一道黑杠）
+    const w = 0.09 * s * fK, hgt = 0.115 * s * fK;
+    for (const sx of pockets === 'chest1' ? [-1] : [-1, 1]) pocket(sx * 0.082 * W * fK, yChest, w, hgt, 0.028 * s * fK, pockets === 'chest2');
   } else if (pockets === 'zhongshan4') {
     for (const sx of [-1, 1]) pocket(sx * 0.072 * W, yChest + 0.005 * s, 0.092 * s, 0.11 * s, 0.032 * s, true);
     const yLow = d.yW + 0.025 * s;
@@ -318,12 +319,15 @@ export function buildCollar(mb: MeshBuilder, d: UpperDims, g: Readonly<GarmentSp
     rad.normalize();
     // 离前面开口多近（0 = 后背正中，1 = 开口边）
     const endK = closed ? 0 : Math.pow(Math.abs(e - 0.5) * 2, 3);
+    // fix2：衬衫领的领尖往两边岔开（不是两头并在喉咙下）
+    if (type === 'shirt') rad.applyAxisAngle(new THREE.Vector3(0, 1, 0), (e < 0.5 ? 1 : -1) * 0.45 * endK);
     let prof: [number, number][];
     if (type === 'shirt' || type === 'shirt_open') {
       const open = type === 'shirt_open';
       const hs = (open ? 0.024 : 0.027) * s * k * (1 - 0.35 * endK * (open ? 1.4 : 1));
       // 翻领下沿：顺着肩膀表面往外 fo 的那一点之上 2.5mm
-      const fo = (0.026 + (open ? 0.03 : 0.016) * endK) * s * k;
+      // fix2：关着的衬衫领：领面更宽（压在肩上 3.4cm），两头的领尖往前下方伸到胸口（~7cm），不再是一圈立领
+      const fo = (open ? 0.026 + 0.03 * endK : 0.034 + 0.012 * endK + 0.034 * Math.pow(endK, 2.2)) * s * k;
       const fallExtra = (open ? 0.05 : 0.026) * endK * s * k;
       const p = base.clone().addScaledVector(rad, fo).add(new THREE.Vector3(0, 0.06, 0));
       const hit = surf.cast(p, new THREE.Vector3(0, -1, 0));

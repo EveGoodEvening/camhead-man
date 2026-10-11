@@ -80,8 +80,11 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
   const yBottom = d.yW - hemDrop;
   const yNeckFront = neckBasePoint(d, Math.PI / 2, 0, new THREE.Vector3()).y;
   if (!robe) {
-    const pOver = mb.piece({ name: 'torsoOverlay', slot: torsoSlot, order: -1 });
-    const pOver2 = mb.piece({ name: 'torsoOverlayTop', slot: torsoSlot, order: -2 });
+    // fix2：贴面排在衣身后面画（order +1/+2）。原来排在前面（-1/-2）：魂影/回放写深度、按索引顺序画，从背后看时
+    // 胸前的领尖、扣子、口袋边先画上去、背后的衣身再盖一层半透明，就“透”到背上了。排在后面：背后先写深度，前面的贴面画不上；
+    // 正面看贴面比底下的衣身多一层（略实一点），是可以接受的
+    const pOver = mb.piece({ name: 'torsoOverlay', slot: torsoSlot, order: 1 });
+    const pOver2 = mb.piece({ name: 'torsoOverlayTop', slot: torsoSlot, order: 2 });
     buildOverlays(mb, d, g, surf, { body: pOver, top: pOver2 }, skinAt, yBottom, yNeckFront);
   }
   if (g.collar !== 'none') {

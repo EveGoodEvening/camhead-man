@@ -116,10 +116,13 @@ export function createMotion(ctx: MotionCtx): Motion {
   const ky = Math.max(0, profile.kyphosis);
   const kyN = Math.min(1.6, ky / 0.25);
   // fix1：弯在上背（几何里的驼峰）多、髋上那一折少：脊柱转得少一点，头靠颈往前探
-  const hunchSpine = -1.05 * ky;
-  const hunchNeck = 0.64 * ky;
-  const hunchShoulder = 0.12 * ky;
-  const oldKnee = old || ky >= 0.15 ? 0.08 * Math.min(1, kyN) : 0;
+  // fix2：重度驼背（王奶奶 0.35）不再是腰上一折：腰上弯得少、上背的驼峰在几何里，颈往前探（头在胸前），头再抬回来脸朝前略低；膝弯得多一点
+  const strong = THREE.MathUtils.smoothstep(ky, 0.26, 0.34);
+  const hunchSpine = -1.05 * ky * (1 - 0.25 * strong);
+  const hunchNeck = 0.64 * ky * (1 - strong) - 0.8 * ky * strong;
+  const hunchHead = 0.95 * ky * strong;
+  const hunchShoulder = 0.12 * ky * (1 + 0.6 * strong);
+  const oldKnee = old || ky >= 0.15 ? 0.08 * Math.min(1, kyN) + 0.16 * strong : 0;
   const strideK = (ky > 0.1 || old ? 0.85 : 1) * (child ? 0.9 : 1);
   const armK = ky > 0.1 ? 0.55 : old ? 0.75 : 1;
   const bobK = child ? 1.4 : 1;
@@ -177,6 +180,7 @@ export function createMotion(ctx: MotionCtx): Motion {
     // 体态（驼背、老人膝微屈）——任何姿势都在（坐着也驼背）
     J.spine.rotation.x += hunchSpine;
     J.neck.rotation.x += hunchNeck;
+    J.headSlot.rotation.x += hunchHead;
     J.shoulderL.rotation.y -= hunchShoulder;
     J.shoulderR.rotation.y += hunchShoulder;
     if (oldKnee > 0 && stK > 0 && legsWalk()) {

@@ -39,6 +39,34 @@ export interface TorsoOut {
 
 const B = (n: Parameters<typeof boneIndex>[0]) => boneIndex(n);
 
+/**
+ * fix2：裤子骨盆段（WAIST → 分裆圈）在高 y 处的半宽 a、前深 bf、后深 bb（根空间，按 WAIST 中心量；与 lower/trousers.ts pelvisRing 同式），
+ * 分裆圈以下取两条裤腿合起来的外包（臀褶处后片再鼓 4mm）。下摆按它让开裤子。
+ */
+export function pantsEnvelope(ctx: BuildCtx, d: UpperDims): (y: number) => { a: number; bf: number; bb: number } {
+  const W0 = ctx.seams.WAIST, s = ctx.s, p = ctx.profile;
+  const c = W0.centre;
+  const aW = W0.pos[0]! - c[0];
+  const bW = W0.pos[18 * 3 + 2]! - c[2];
+  const bellyW = (c[2] - W0.pos[6 * 3 + 2]!) / bW - 1;
+  const child = p.age === 'child';
+  const female = p.sex === 'f' && !child;
+  const aH = child ? aW * 1.04 : Math.max(aW * 1.02, 0.171 * s * p.bw * p.hipW);
+  const bfH = (child ? 0.095 : 0.097) * s * p.bd;
+  const bbH = (female ? 0.126 : child ? 0.105 : 0.116) * s * Math.sqrt(p.bd);
+  const hipJ = d.bind.hipR[1], Lth = hipJ - d.bind.kneeR[1];
+  const ySplit = hipJ - 0.14 * Lth;
+  const legA = d.bind.hipR[0] + 0.083 * s * p.bw * (female ? 0.93 : 1);
+  return (y: number) => {
+    const f = Math.min(1, Math.max(0, (c[1] - y) / (c[1] - ySplit)));
+    let a = aW + (aH - aW) * Math.pow(Math.sin((f * Math.PI) / 2), 0.85);
+    const bf = (bW + (bfH - bW) * f) * (1 + bellyW * Math.pow(1 - f, 1.6));
+    let bb = bW + (bbH - bW) * Math.sin((Math.min(1, f * 1.15) * Math.PI) / 2);
+    if (y < ySplit) { a = Math.max(a, legA); bb = bbH + 0.004 * s; }
+    return { a, bf, bb };
+  };
+}
+
 /** fix1：inner = 没有人头（摄像头）时 V 口里、领口封口用的深色内衬（不是皮肤） */
 export interface TorsoPieces { torso: number; skin: number; inner?: number }
 
@@ -189,6 +217,10 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     const hipBb = Math.max(d.bWb, (d.female ? 0.125 : 0.115) * d.D) + 0.011 * s + d.pad;
     // 下摆短（离腰不到 11cm）时只张到当地的胯宽（不到最宽的臀围）：新娘小袄的下摆不再是一圈平伸出去的边
     const hipK = Math.pow(Math.min(1, hemDrop / (0.11 * s)), 0.8);
+    // fix2：下摆每一圈都要比同高度的裤子（骨盆段，臀部最鼓处在腰下 ~10cm，正好在长下摆的中段）大出一截，
+    // 否则长下摆（中山装 16cm）的中段压进臀部，背后一片 z-fighting 的黑斑。与 lower/trousers.ts pelvisRing 同式。
+    const env = pantsEnvelope(ctx, d);
+    const clear = 0.01 * s + d.pad;
     const skirtRing = (yy: number, k: number, lip: number): THREE.Vector3[] => W24.map((w, i) => {
       const t = (i / W.count) * Math.PI * 2;
       const c = Math.cos(t), sn = -Math.sin(t);
@@ -197,8 +229,12 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       const wa = Math.abs(c) > 1e-6 ? ax / Math.pow(Math.abs(c), 2 / 3) : d.aW;
       void wa;
       const kk = k * hipK;
-      const fx = (d.aW + (hipA - d.aW) * kk) / d.aW;
-      const fz = sn < 0 ? (d.bWb + (hipBb - d.bWb) * kk) / d.bWb : (d.bWf + (hipBf - d.bWf) * kk) / d.bWf;
+      const e = env(yy);
+      const fx = Math.max((d.aW + (hipA - d.aW) * kk) / d.aW, (e.a + clear) / d.aW);
+      // sn = -sin t：sn < 0 是前片（t ≈ π/2，z < 0）。fix2：原来前后弄反了（后片只撇到前片的尺寸，压进臀部）
+      const fz = sn > 0
+        ? Math.max((d.bWb + (hipBb - d.bWb) * kk) / d.bWb, (e.bb + clear) / d.bWb)
+        : Math.max((d.bWf + (hipBf - d.bWf) * kk) / d.bWf, (e.bf + clear) / d.bWf);
       const out = new THREE.Vector3(W.centre[0] + (w.x - W.centre[0]) * fx, yy, W.centre[2] + (w.z - W.centre[2]) * fz);
       // 衣襟下摆的几道垂褶（很浅）
       const fold = 0.0025 * s * k * Math.sin(7 * t + 1.3);
@@ -312,7 +348,15 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       const l = dir.length() || 1;
       let dr = 0.0012 * s * Math.sin(Math.PI * lam);
       if (male && sn > 0) dr += 0.0032 * s * Math.pow(sn, 12) * gauss(lam - 0.45, 0.22);
-      if (sn > 0) dr += 0.0015 * s * gauss(Math.abs(c) - 0.6, 0.18) * Math.sin(Math.PI * lam);
+      // fix2：胸锁乳突肌：从耳后（上、侧后）斜到胸骨（下、前中），两条斜的肌肉棱，中间喉咙略凹；后颈两侧也略收
+      // （脖子不再是一根匀匀的圆筒）
+      {
+        const ang = Math.atan2(sn, Math.abs(c)); // 0 = 侧面，π/2 = 正前
+        const ridge = 0.18 + 1.05 * (1 - lam); // 下面靠前中、上面靠侧面
+        dr += 0.0032 * s * gauss(ang - ridge, 0.28) * Math.sin(Math.PI * Math.min(1, lam * 1.15 + 0.08));
+        if (sn > 0.85) dr -= 0.0014 * s * gauss(lam - 0.25, 0.25);
+        if (sn < -0.2) dr -= 0.0018 * s * Math.sin(Math.PI * lam) * Math.min(1, -sn * 1.5);
+      }
       return q.addScaledVector(dir, dr / l);
     });
     const n1 = mb.ring(neckRing(0.36), 1, () => [[spine, 0.45], [neck, 0.55]]);

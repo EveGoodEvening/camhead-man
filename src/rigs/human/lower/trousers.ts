@@ -36,8 +36,9 @@ function legSection(ctx: BuildCtx, f: LegFrame, st: LowerStyle) {
   const s = ctx.s, p = ctx.profile;
   const child = p.age === 'child';
   const female = p.sex === 'f' && !child;
+  // fix2：孩子的腿粗一点（短而圆的腿，不是缩小的大人腿）
   const kw = s * p.bw * (female ? 0.93 : 1) * (child ? 0.95 : 1);
-  const kd = s * Math.sqrt(p.bd) * (female ? 0.94 : 1) * (child ? 0.95 : 1);
+  const kd = s * Math.sqrt(p.bd) * (female ? 0.94 : 1) * (child ? 1.06 : 1);
   const bag = st.baggyKnee ? 1 : 0;
   // 纵向坐标：u = 0 大腿根（yT）、1 膝、2 裤脚（两段各自归一）。九十年代的直筒裤：膝下几乎不收，裤脚前面堆两道横褶（1.92、1.96）
   const us = [0, 0.3, 0.6, 0.82, 0.92, 0.975, 1.0, 1.025, 1.08, 1.27, 1.5, 1.72, 1.86, 1.92, 1.96, 2.0];

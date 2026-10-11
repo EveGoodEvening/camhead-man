@@ -17,8 +17,8 @@ export const PRESET_SCULPT: Readonly<Record<HeadPreset, Partial<Record<SculptKey
   oldMan: { faceLen: 0.45, cheekFull: -0.4, browRidge: 0.6, earSize: 0.35, earlobe: 0.45, noseLen: 0.3, noseBridge: 0.35, lipFull: -0.45, jawW: 0.3 },
   oldWoman: { jawW: 0.15, chin: -0.45, cheekFull: 1.0, lipFull: -0.6, noseLen: -0.25, noseBridge: -0.3, browRidge: -0.9, earlobe: 0.35, faceLen: -0.45, cheekbone: -0.2 },
   // fix1：孩子圆脸（下颌不收、腮帮鼓、脸短、下巴小）
-  boy: { chin: -0.6, jawW: 0.4, cheekFull: 1.5, browRidge: -1, noseLen: -0.45, noseBridge: -0.8, eyeSize: 0.6, lipFull: 0.1, earSize: -0.1, faceLen: -0.6 },
-  girl: { chin: -0.65, jawW: 0.25, cheekFull: 1.5, browRidge: -1.2, noseLen: -0.55, noseBridge: -0.9, eyeSize: 0.7, lipFull: 0.3, earSize: -0.25, faceLen: -0.6 },
+  boy: { chin: -0.6, jawW: 0.05, cheekFull: 1.5, browRidge: -1, noseLen: -0.45, noseBridge: -0.8, eyeSize: 0.6, lipFull: 0.1, earSize: -0.1, faceLen: -0.6 },
+  girl: { chin: -0.65, jawW: -0.1, cheekFull: 1.5, browRidge: -1.2, noseLen: -0.55, noseBridge: -0.9, eyeSize: 0.7, lipFull: 0.3, earSize: -0.25, faceLen: -0.6 },
   deity: { cheekFull: 1.3, chin: -0.35, jawW: 0.45, earlobe: 1.6, earSize: 0.45, browRidge: 0.25, noseW: 0.35, foreheadH: 0.6, lipFull: 0.1 },
 };
 
@@ -120,7 +120,8 @@ const K = (pts: readonly (readonly [number, number])[]) => {
 const LINE_M = K([[0, 124], [12, 125], [24, 129], [36, 136], [46, 136.5], [56, 128], [64, 119], [70, 111], [75, 99], [80, 104], [86, 114], [101, 114], [110, 90], [120, 74], [140, 63], [160, 59], [180, 58]]);
 /** 女式：圆一点、没有鬓角。 */
 // 集成：前额正中高一点、往两边额角圆圆地落下来（原来前额一段几乎是平的，往后梳的发型读成齐刘海）
-const LINE_F = K([[0, 133.5], [10, 132.6], [22, 130.2], [35, 126.2], [50, 120.6], [62, 115.6], [72, 110], [80, 112], [86, 115], [101, 115], [110, 92], [120, 76], [140, 64], [160, 60], [180, 59]]);
+// fix2：前额正中更高、往两边额角圆圆地落得更多（正面看是一道弧，不是一刀齐的帽边）
+const LINE_F = K([[0, 135.5], [10, 134.3], [22, 131.2], [35, 126.2], [50, 119.6], [62, 115], [72, 110], [80, 112], [86, 115], [101, 115], [110, 92], [120, 76], [140, 64], [160, 60], [180, 59]]);
 /** 老头的稀发：前额和额角都退了。 */
 const LINE_THIN = K([[0, 137], [22, 139], [38, 143], [55, 133], [68, 117], [75, 101], [80, 105], [86, 114], [101, 114], [110, 90], [120, 74], [140, 63], [160, 59], [180, 58]]);
 /** 碗盖：一圈平平的边（前额压低成刘海）。 */
@@ -141,10 +142,11 @@ export function hairDef(h: NormHair, female: boolean): HairDef {
     case 'thin_old': return { line: LINE_THIN, tTop: 0.0034, tSide: 0.0042, tBack: 0.0048, tNape: 0.002, ramp: 2.6 * DEG, jag: 3 * DEG, clumps: 0.12, fade: 0.35 };
     case 'bald': return { line: LINE_M, top: TOP_BALD, minPsi: 74 * DEG, tTop: 0.0046, tSide: 0.0048, tBack: 0.005, tNape: 0.0026, ramp: 2.4 * DEG, jag: 2.5 * DEG, clumps: 0.15 };
     case 'flat_top': return { line, tTop: 0.012, tSide: 0.0055, tBack: 0.006, tNape: 0.0028, ramp: 2 * DEG, flat: 0.272, jag: 2 * DEG };
-    case 'bun': return { line: LINE_F, tTop: 0.0072, tSide: 0.0062, tBack: 0.0066, tNape: 0.0036, ramp: 2.2 * DEG, bun: 'bun', jag: 0.9 * DEG, clumps: 0.08, crown: 0.0035 };
+    // fix2：往后梳的发型发际线软、参差（不是齐刷刷的一道帽边）
+    case 'bun': return { line: LINE_F, tTop: 0.0072, tSide: 0.0056, tBack: 0.0066, tNape: 0.0036, ramp: 3.4 * DEG, bun: 'bun', jag: 2.6 * DEG, clumps: 0.1, crown: 0.0035, part: { psi: 0, depth: 0.0022, width: 2.6 * DEG } };
     case 'long': return {
-      line: LINE_F, tTop: 0.0072, tSide: 0.0068, tBack: 0.0072, tNape: 0.0056, ramp: 2 * DEG, bun: 'chignon',
-      part: { psi: 0, depth: 0.0042, width: 3.6 * DEG }, clumps: 0.1, jag: 0.8 * DEG, crown: 0.003,
+      line: LINE_F, tTop: 0.0072, tSide: 0.006, tBack: 0.0072, tNape: 0.0056, ramp: 3.2 * DEG, bun: 'chignon',
+      part: { psi: 0, depth: 0.0042, width: 3.6 * DEG }, clumps: 0.1, jag: 2.2 * DEG, crown: 0.003,
     };
     case 'child_bowl': return { line: LINE_BOWL, tTop: 0.0135, tSide: 0.0098, tBack: 0.0102, tNape: 0.0078, ramp: 1.3 * DEG, clumps: 0.1, hardEdge: true, jag: 2.4 * DEG, crown: 0.003 };
   }

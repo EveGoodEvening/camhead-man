@@ -148,6 +148,22 @@ export class MeshBuilder {
     else this.t(a, c, b, piece);
   }
 
+  /**
+   * fix2：补洞用的三角形，绕向跟已有的邻居一致：(a, b) 是某个已有三角形的边，新三角形里这条边反向出现。
+   * 找不到邻居时按 a, b, c 原样加。
+   */
+  tMatch(a: number, b: number, c: number, piece: number): void {
+    const T = this.tri;
+    for (let t = 0; t < T.length; t += 3) {
+      for (let e = 0; e < 3; e++) {
+        const p = T[t + e]!, q = T[t + ((e + 1) % 3)]!;
+        if (p === a && q === b) { this.t(b, a, c, piece); return; }
+        if (p === b && q === a) { this.t(a, b, c, piece); return; }
+      }
+    }
+    this.t(a, b, c, piece);
+  }
+
   get triCount(): number {
     return this.tri.length / 3;
   }

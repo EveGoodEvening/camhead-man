@@ -19,7 +19,7 @@ import { IrRenderer } from '../../fx/ir';
 import { createCharacter, type CharacterKind, type CharacterOpts } from '../../rigs/characters';
 import { createCrowd, type CrowdOpts } from '../../rigs/crowd';
 import { LEGACY_LAYOUT, createHumanoidInternal } from '../../rigs/human/assemble';
-import { BONES, SEAMS, boneIndex, jointLayout, landmarksOf, profileOf } from '../../rigs/human/profile';
+import { BONES, FEMALE_SHOULDER, SEAMS, boneIndex, jointLayout, landmarksOf, profileOf } from '../../rigs/human/profile';
 import { blend2, checkRingMatch, loftRings, planeRing, setSkin, smooth01, snapRing } from '../../rigs/human/shared';
 import type { BodyProfile, BuildCtx, RegionResult, SkinnedPiece } from '../../rigs/human/types';
 import { buildUpper } from '../../rigs/human/upper';
@@ -311,7 +311,7 @@ registerSelftest('char2.seams', () => {
     && wa.skin.bones[0] === boneIndex('hips') && wa.skin.weights[0] === 0.65 && wa.skin.bones[1] === boneIndex('spine'));
   r.t('WAIST 成年人：y 0.975、半宽 0.150、半深 0.104', near(wa.pos[1]!, 0.975, 1e-6) && near(wa.pos[0]!, 0.15, 1e-6) && near(-wa.pos[6 * 3 + 2]!, 0.104, 1e-6), `${f3([wa.pos[0]!, wa.pos[1]!, wa.pos[6 * 3 + 2]!])}`);
   const fem = SEAMS(profileOf(base, { skin: '#c', hair: '#2', hairStyle: 'bun', age: 'young', female: true }), 1);
-  r.t('女：NECK_TOP x×0.93 z×0.95（fix1）、WAIST x×0.92 z×0.95', near(fem.NECK_TOP.pos[0]! - fem.NECK_TOP.centre[0], 0.052 * 0.93, 1e-6) && near(fem.WAIST.pos[0]!, 0.15 * 0.92, 1e-6)
+  r.t('女：NECK_TOP x×0.93 z×0.95（fix1）、WAIST x×0.92 z×0.95（fix2：再 × 女肩宽系数 bw）', near(fem.NECK_TOP.pos[0]! - fem.NECK_TOP.centre[0], 0.052 * 0.93, 1e-6) && near(fem.WAIST.pos[0]!, 0.15 * 0.92 * FEMALE_SHOULDER, 1e-6)
     && near(-fem.WAIST.pos[6 * 3 + 2]!, 0.104 * 0.95, 1e-6));
   const stout = SEAMS(profileOf({ ...base, build: 'stout' }), 1).WAIST;
   r.t('stout WAIST 前面鼓出 belly·0.5', near(-stout.pos[6 * 3 + 2]!, 0.104 * 1.22 + 0.025, 1e-6), (-stout.pos[6 * 3 + 2]!).toFixed(4));

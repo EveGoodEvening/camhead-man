@@ -293,10 +293,35 @@ registerSelftest('char2.upper_hand', () => {
     r.t(`${n} 掌心在肘下 ${(-wantY / s).toFixed(3)}s ±1cm`, Math.abs(elbowLocal - wantY) < 0.01, `${(elbowLocal / s).toFixed(3)}s`);
     pn.normalize();
     r.t(`${n} 手心朝大腿（手心法线 · -x > 0.7）`, kn > 0 && pn.x < -0.7, `(${pn.x.toFixed(2)}, ${pn.y.toFixed(2)}, ${pn.z.toFixed(2)})`);
+    // 皮肤网格（含手）：按位置焊接后，每条两面共用的边方向必须相反（没有绕向翻转的三角形），手上没有洞
+    const wind = windingIssues(g, wr.y - 0.013 * s);
+    r.t(`${n} 皮肤绕向一致（翻转边 0）、手上无开口边`, wind.flipped === 0 && wind.openHand === 0, `flipped ${wind.flipped}, open ${wind.openHand}, >2 ${wind.nonManifold}`);
     disposePieces(pieces);
   }
   return r.done();
 });
+
+/** 绕向检查：位置焊接（0.1mm）后统计翻转边、非流形边，以及 y < handTop 的开口边（手应当是封闭的）。 */
+function windingIssues(g: THREE.BufferGeometry, handTop: number): { flipped: number; nonManifold: number; openHand: number } {
+  const P = g.attributes.position as THREE.BufferAttribute, I = g.index!;
+  const key = (i: number) => `${P.getX(i).toFixed(4)},${P.getY(i).toFixed(4)},${P.getZ(i).toFixed(4)}`;
+  const id = new Map<string, number>(), w: number[] = [];
+  for (let i = 0; i < P.count; i++) { const k = key(i); if (!id.has(k)) id.set(k, id.size); w.push(id.get(k)!); }
+  const edges = new Map<string, { n: number; dir: number; v: number }>();
+  for (let t = 0; t < I.count; t += 3) for (let e = 0; e < 3; e++) {
+    const a = w[I.getX(t + e)]!, b = w[I.getX(t + (e + 1) % 3)]!;
+    const k = a < b ? `${a}_${b}` : `${b}_${a}`;
+    const rec = edges.get(k) ?? { n: 0, dir: 0, v: I.getX(t + e) };
+    rec.n++; rec.dir += a < b ? 1 : -1; edges.set(k, rec);
+  }
+  let flipped = 0, nonManifold = 0, openHand = 0;
+  for (const e of edges.values()) {
+    if (e.n === 2 && e.dir !== 0) flipped++;
+    else if (e.n > 2) nonManifold++;
+    else if (e.n === 1 && P.getY(e.v) < handTop && Math.abs(P.getX(e.v)) > 0.05) openHand++;
+  }
+  return { flipped, nonManifold, openHand };
+}
 
 registerSelftest('char2.upper_landmarks', () => {
   const r = report();

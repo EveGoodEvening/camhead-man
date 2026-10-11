@@ -200,8 +200,9 @@ function feltHat(h: HumanoidInternal, o?: CapOpts): THREE.Group {
   const jit = Array.from({ length: N }, () => range(r, -1, 1));
   const jitAt = (i: number) => (jit[i % N]! * 0.6 + jit[(i + 1) % N]! * 0.2 + jit[(i + N - 1) % N]! * 0.2);
   // low：帽箍前沿压到眉眼之间（脸埋在帽檐下，下巴和嘴还看得见）；back：掀到后脑勺
-  const y0 = o?.low ? L.browY + 0.024 * k : o?.back ? L.browY + 0.052 * k : L.browY + 0.035 * k;
-  const tilt = o?.low ? 0.02 * k : o?.back ? -0.022 * k : 0.004 * k; // 正 = 前低后高
+  // fix2：黄鼬的帽子掀得更高、更往后（帽檐不再从耳朵中间切过去）
+  const y0 = o?.low ? L.browY + 0.024 * k : o?.back ? L.browY + 0.05 * k : L.browY + 0.035 * k;
+  const tilt = o?.low ? 0.02 * k : o?.back ? -0.045 * k : 0.004 * k; // 正 = 前低后高
   const band = capBand(fit, y0, tilt, N, 0.004 * k);
   const H = 0.092 * k;
   const crownRings: Float32Array[] = [];
@@ -233,7 +234,7 @@ function feltHat(h: HumanoidInternal, o?: CapOpts): THREE.Group {
   const crown = loftRings(crownRings, { capEnd: [cx / N, cy / N - 0.004 * k, cz / N] });
   // 帽檐：一圈，宽 6cm（黄鼬那顶 5cm），前后耷拉、两侧略翘，边沿不齐
   const rowsN = 6;
-  const W = (o?.back ? 0.05 : 0.062) * k;
+  const W = (o?.back ? 0.042 : 0.062) * k;
   const grid: THREE.Vector3[][] = [];
   for (let j = 0; j < rowsN; j++) {
     const t = j / (rowsN - 1);
@@ -297,7 +298,8 @@ function hairpin(h: HumanoidInternal, o?: { flower?: boolean }): THREE.Group {
 // ---------------------------------------------------------------- 竹篮
 
 /** 竹篮（王奶奶）：编织纹的篮身（上口外撇、卷边）、竹提梁（带竹节）、盖着的一块蓝布（垂过篮沿、有褶）。一个网格、一张贴图。 */
-function basket(s: number): THREE.Group {
+/** handle：提梁拱高（×s，缺省 0.15）。 */
+function basket(s: number, handleH = 0.15): THREE.Group {
   const g = new THREE.Group();
   g.name = 'basket';
   // 贴图分区：u 0–0.68 编织、0.70–0.84 蓝布、0.86–1 竹提梁
@@ -364,7 +366,7 @@ function basket(s: number): THREE.Group {
   const hp: THREE.Vector3[] = [];
   for (let i = 0; i <= 10; i++) {
     const a = (i / 10) * Math.PI;
-    hp.push(V(Math.cos(a) * 0.148 * S, (0.07 + Math.sin(a) * 0.15) * S, 0));
+    hp.push(V(Math.cos(a) * 0.148 * S, (0.07 + Math.sin(a) * handleH) * S, 0));
   }
   const handle = tube(hp, t => 0.0075 * S * (1 + 0.18 * Math.exp(-(((t - 0.3) / 0.02) ** 2)) + 0.18 * Math.exp(-(((t - 0.7) / 0.02) ** 2))), { seg: 36, radial: 8, caps: true });
   remapUv(handle, 0.86, 0, 1, 1);
@@ -616,12 +618,13 @@ function tlr(h: HumanoidInternal): THREE.Group {
     const side: THREE.Vector3[] = [
       lugP,
       lugP.clone().add(V(sx * 0.006 * s, 0.03 * s, -0.003 * s)),
-      chestPt(sx * 0.05 * s, cy + 0.1 * s, 0.013 * s),
-      chestPt(sx * 0.058 * s, cy + 0.155 * s, 0.014 * s),
-      yokePt(at(Math.PI / 2 - 0.72), 0.45),
-      ringPt(at(Math.PI / 2 - 0.62), 0.003 * s),
-      ringPt(at(0.35), -0.002 * s),
-      ringPt(at(-0.45), -0.012 * s),
+      chestPt(sx * 0.05 * s, cy + 0.09 * s, 0.013 * s),
+      chestPt(sx * 0.062 * s, cy + 0.15 * s, 0.014 * s),
+      // fix2：背带从胸口直直地上到脖子旁边的肩上（斜方肌上），再从后颈绕过去；不再拐到立领前面的两个领角上（正面看是两截折线）
+      yokePt(at(0.66), 0.42),
+      yokePt(at(0.36), 0.78),
+      ringPt(at(0.06), -0.003 * s),
+      ringPt(at(-0.5), -0.012 * s),
     ];
     if (sx < 0) half.push(...side);
     else half.push(...side.reverse());
@@ -840,22 +843,30 @@ function beard(h: HumanoidInternal): THREE.Object3D {
     if (ys < 0.05 * h.s) return chinZ + 0.06 * k;
     return torsoSurface(h, 0.25, ys).p.z - 0.005 * h.s;
   };
+  // fix2：胡子是一大团包住下巴和脖子前半圈的须（后沿退到脖子中线，侧面看不到胡子后面露着一截光脖子；下巴底下也不再露出
+  // 一块朝下的黑面），上沿从嘴角两边沿着下颌长出来（上两圈在脸里面，不露开口）
   const hang = (d: number, w: number, thick: number): [number, number, number, number] => {
     const y = hy(d);
-    const zb = Math.min(chinZ + 0.05 * k, chestZ(y));
-    return [y, w * k, zb - thick * k, zb];
+    // 下巴下面两圈：后沿退到脖子后半（侧面把脖子藏在胡子里）；再往下贴着胸口
+    const zb = d < 0.07 ? cz + 0.03 * k : Math.min(cz + 0.03 * k, chestZ(y));
+    const zfWant = chinZ - 0.02 * k + 0.028 * k * (d / 0.186);
+    return [y, w * k, Math.min(zfWant, zb - thick * k), zb];
   };
   const keys: [number, number, number, number][] = [
-    [mouthY + 0.002 * k, jawW(mouthY) * 0.98, fit.front(0, mouthY - 0.004 * k) - 0.005 * k, cz + 0.016 * k],
-    [mouthY - 0.016 * k, jawW(mouthY - 0.016 * k) * 1.0, fit.front(0, mouthY - 0.016 * k) - 0.012 * k, cz + 0.01 * k],
-    [chinY + 0.004 * k, jawW(chinY + 0.01 * k) * 0.97, chinZ - 0.016 * k, cz - 0.004 * k],
-    hang(0.026, 0.068, 0.044),
-    hang(0.06, 0.066, 0.035),
-    hang(0.1, 0.058, 0.028),
-    hang(0.138, 0.046, 0.022),
-    hang(0.168, 0.03, 0.016),
-    hang(0.186, 0.012, 0.011),
+    // 顶圈整个在脸里面（下面封口），往下一圈才从脸上长出来：没有开口、没有翘起来的边
+    [mouthY + 0.004 * k, jawW(mouthY) * 0.88, fit.front(0, mouthY) + 0.003 * k, cz + 0.02 * k],
+    [mouthY - 0.005 * k, jawW(mouthY - 0.005 * k) * 0.99, fit.front(0, mouthY - 0.007 * k) - 0.005 * k, cz + 0.02 * k],
+    [mouthY - 0.017 * k, jawW(mouthY - 0.017 * k) * 1.05, fit.front(0, mouthY - 0.019 * k) - 0.013 * k, cz + 0.02 * k],
+    [chinY + 0.006 * k, jawW(chinY + 0.012 * k) * 1.08, chinZ - 0.019 * k, cz + 0.018 * k],
+    hang(0.026, 0.072, 0.03),
+    hang(0.06, 0.07, 0.026),
+    hang(0.1, 0.061, 0.022),
+    hang(0.138, 0.047, 0.018),
+    hang(0.168, 0.03, 0.014),
+    hang(0.186, 0.012, 0.01),
   ];
+  // 下颌以下的圈不比上一圈宽（原来下巴下面一圈比下巴宽，横着一道朝上的台阶，侧面看是一块黑板）
+  for (let i = 3; i < keys.length; i++) keys[i]![1] = Math.min(keys[i]![1], keys[i - 1]![1] * (i === 3 ? 1.02 : 0.995));
   // 关键圈之间插值（Catmull-Rom 过每个关键圈）
   const N = 28, sub = 3;
   const rows: Float32Array[] = [];
@@ -874,7 +885,8 @@ function beard(h: HumanoidInternal): THREE.Object3D {
   rows.push(beardRing(keys[K - 1]!, N, 1, k));
   vs.push(1);
   const last = keys[K - 1]!;
-  const mainGeo = loftRings(rows, { v: vs.map(v => 1 - v), capEnd: [0, last[0] - 0.003 * k, (last[2] + last[3]) / 2] });
+  const first = keys[0]!;
+  const mainGeo = loftRings(rows, { v: vs.map(v => 1 - v), capStart: [0, first[0] + 0.002 * k, (first[2] + first[3]) / 2], capEnd: [0, last[0] - 0.003 * k, (last[2] + last[3]) / 2] });
   // 八字须：鼻底两边往外、往下耷拉过嘴角，扁的、往尖收
   const parts: THREE.BufferGeometry[] = [mainGeo];
   const nb = L.noseBaseY;
@@ -990,25 +1002,28 @@ function hardHat(h: HumanoidInternal): THREE.Group {
   const L = headLand(h);
   const k = L.scale;
   const fit = headFit(h);
-  const N = 36;
+  const N = 32;
   const y0 = L.browY + 0.024 * k;
   const band = capBand(fit, y0, 0.004 * k, N, 0.011 * k);
-  const H = Math.max(L.hairTop + 0.04 * k - y0, 0.1 * k);
+  // fix2：一顶真的安全帽——前后略长、帽顶高一点；正中一道 2cm 宽的加强棱（高 9mm），两侧各一道棱；前面的帽壳往前收成帽舌，
+  // 两侧、后面一圈窄檐往下扣；帽口里面一圈深色的帽箍（悬挂带）露出来
+  const H = Math.max(L.hairTop + 0.048 * k - y0, 0.108 * k);
   const rows: Float32Array[] = [];
   const NR = 10;
+  const elong = (ang: number) => 1 + 0.05 * Math.max(0, Math.sin(ang)) + 0.025 * Math.max(0, -Math.sin(ang)) - 0.02 * Math.cos(ang) ** 2;
   for (let j = 0; j <= NR; j++) {
     const phi = (j / NR) * (Math.PI / 2) * 0.985;
-    const sc = Math.pow(Math.cos(phi), 0.7) * (1 + 0.035 * Math.sin(phi * 2));
+    const sc = Math.pow(Math.cos(phi), 0.62) * (1 + 0.03 * Math.sin(phi * 2));
     const dy = H * Math.sin(phi);
-    const ring = ringAt(fit, band, () => Math.max(0.04, sc), () => dy, -0.004 * k * Math.sin(phi));
-    // 加强棱：沿前后中线一道（凸 5mm），两侧各一道浅棱；按方位角定宽（越往顶越窄），帽顶收平，不鼓成一个尖
-    const on = THREE.MathUtils.smoothstep(phi, 0.12, 0.45) * (1 - THREE.MathUtils.smoothstep(phi, 1.15, 1.5));
+    const ring = ringAt(fit, band, (_i, ang) => Math.max(0.04, sc * elong(ang)), () => dy, -0.004 * k * Math.sin(phi));
+    const on = THREE.MathUtils.smoothstep(phi, 0.08, 0.4) * (1 - THREE.MathUtils.smoothstep(phi, 1.2, 1.52));
     for (let i = 0; i < N; i++) {
       const ang = (i / N) * Math.PI * 2;
       const c = Math.cos(ang);
-      // fix1：中间那道加强棱更高更宽、两侧的棱也看得出（结尾近景里不再是一个光溜溜的半球）
-      const ridge = (0.0085 * Math.exp(-((c / 0.12) ** 2)) + 0.0038 * Math.exp(-(((Math.abs(c) - 0.42) / 0.08) ** 2))) * k * on;
-      // 沿壳面外法线（径向·cosφ + 向上·sinφ）鼓出
+      // 正中一道宽棱（平顶、两边陡）+ 两侧各一道细棱
+      const mid = 0.0092 * (1 - THREE.MathUtils.smoothstep(Math.abs(c), 0.07, 0.13));
+      const sideRib = 0.0042 * Math.exp(-(((Math.abs(c) - 0.4) / 0.055) ** 2));
+      const ridge = (mid + sideRib) * k * on;
       ring[i * 3] = ring[i * 3]! + Math.cos(ang) * ridge * Math.cos(phi);
       ring[i * 3 + 1] = ring[i * 3 + 1]! + ridge * Math.sin(phi);
       ring[i * 3 + 2] = ring[i * 3 + 2]! - Math.sin(ang) * ridge * Math.cos(phi);
@@ -1018,11 +1033,10 @@ function hardHat(h: HumanoidInternal): THREE.Group {
   const top = rows[rows.length - 1]!;
   let cx = 0, cy = 0, cz = 0;
   for (let i = 0; i < N; i++) { cx += top[i * 3]!; cy += top[i * 3 + 1]!; cz += top[i * 3 + 2]!; }
-  // 下口往里卷一道（壳有厚度）
-  const lip = ringAt(fit, band, () => 0.965, () => 0.006 * k);
+  const lip = ringAt(fit, band, (_i, ang) => 0.965 * elong(ang), () => 0.006 * k);
   const shell = loftRings([lip, ...rows], { capEnd: [cx / N, cy / N + 0.004 * k, cz / N] });
-  // 帽沿：前面帽舌长 4.6cm、两侧 1.2cm、后面 2cm；前面略往下
-  const rowsN = 5;
+  // 帽檐：前面帽舌 5.8cm（往前下方 ~20°、两边圆过去），两侧 1.1cm、后面 2.4cm，都往下扣（侧边 ~45°）
+  const rowsN = 4;
   const grid: THREE.Vector3[][] = [];
   for (let j = 0; j < rowsN; j++) {
     const t = j / (rowsN - 1);
@@ -1030,18 +1044,26 @@ function hardHat(h: HumanoidInternal): THREE.Group {
     for (let i = 0; i < N; i++) {
       const ang = (i / N) * Math.PI * 2;
       const fr = Math.max(0, Math.sin(ang)), bk = Math.max(0, -Math.sin(ang));
-      // fix1：一圈完整的窄帽檐（两侧 1.4cm、后面 2cm、前面帽舌 5.5cm），是安全帽不是棒球帽
-      const w = (0.014 + 0.041 * Math.pow(fr, 2.0) + 0.006 * Math.pow(bk, 2.0)) * k;
+      const peak = Math.pow(fr, 2.6);
+      const w = (0.011 + 0.047 * peak + 0.013 * Math.pow(bk, 2)) * k;
       const d = t * w;
-      const rr = band.r[i]! * 1.004 + d;
-      // 帽舌往下弯（前面的帽舌更长、弯得更明显）
-      const droop = d * (0.24 + 0.24 * fr) + t * t * 0.006 * k * fr + t * 0.002 * k * (1 - fr);
+      const rr = band.r[i]! * 1.004 * elong(ang) * 0.985 + d;
+      // 侧边往下扣得多，帽舌往前下方、末端再往下弯一点
+      const slope = 0.95 * (1 - peak) + 0.36 * peak;
+      const droop = d * slope + t * t * 0.007 * k * peak;
       row.push(V(fit.cx + Math.cos(ang) * rr, band.y[i]! - droop, fit.cz - Math.sin(ang) * rr));
     }
     grid.push(row);
   }
-  const brim = thickSheet(grid, 0.0038 * k, { wrapU: true });
+  const brim = thickSheet(grid, 0.0036 * k, { wrapU: true });
   g.add(mesh(mergeParts([shell, brim]), kitMat('hardhat.shell', { color: '#C8601C', roughness: 0.42 }), 'hardHatShell'));
+  // 帽箍（悬挂带）：帽口里面一圈 1.6cm 宽的深色带子，下沿比帽口低 7mm，前额上一块垫
+  const sRows: Float32Array[] = [];
+  for (const [sc, dy] of [[0.935, 0.01], [0.928, -0.008]] as const) {
+    sRows.push(ringAt(fit, band, (_i, ang) => sc * elong(ang) * (1 + 0.012 * Math.max(0, Math.sin(ang)) ** 4), () => dy * k));
+  }
+  const strap = thickSheet(sRows.map(r => Array.from({ length: N }, (_, i) => V(r[i * 3]!, r[i * 3 + 1]!, r[i * 3 + 2]!))), 0.0025 * k, { wrapU: true });
+  g.add(mesh(strap, kitMat('hardhat.strap', { color: '#2A2622', roughness: 0.8 }), 'hardHatStrap'));
   return g;
 }
 
@@ -1174,7 +1196,7 @@ export interface AccessoryKit {
   /** 发簪（王奶奶的玉珠、新娘的小红花）；发髻本身是头发几何 */
   hairpin(h: HumanoidInternal, o?: { flower?: boolean }): THREE.Group;
   /** 竹篮（盖蓝布） */
-  basket(s: number): THREE.Group;
+  basket(s: number, handleH?: number): THREE.Group;
   /** 枣木拐杖 + 小红灯笼（土地） */
   caneLantern(s: number): { group: THREE.Group; lantern: THREE.Object3D; light: THREE.Object3D };
   /** 搪瓷缸（老周） */

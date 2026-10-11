@@ -32,7 +32,7 @@ export function buildHand(mb: MeshBuilder, d: UpperDims, wristRing: number[], wr
     [-0.016, 0.0195, 0.034, 0.004, 0.0025, 0],
     [-0.036, 0.0172, 0.0395, 0.0062, 0.003, 0],
     [-0.057, 0.0155, 0.0418, 0.0025, 0.0022, 0],
-    [-0.08, 0.0146, 0.0428, 0, 0.001, 0.0018],
+    [-0.084, 0.0148, 0.0432, 0, 0.001, 0.0018],
   ];
   const palmRings: number[][] = [wristRing];
   const centres: THREE.Vector3[] = [];
@@ -65,17 +65,18 @@ export function buildHand(mb: MeshBuilder, d: UpperDims, wristRing: number[], wr
   const axisRef = (q: THREE.Vector3) => new THREE.Vector3(wrist.x, q.y, wrist.z);
   const tPalm = mb.triCount;
   for (let r = 0; r + 1 < palmRings.length; r++) {
-    const hole = r === 1 || r === 2;
+    const hole = r === 2 || r === 3; // palmRings[2]→[4]，与下面拇指的 loop 同一个洞
     mb.strip(palmRings[r]!, palmRings[r + 1]!, piece, hole ? (i => i >= TH0 && i < TH1) : undefined);
   }
   mb.orient(tPalm, mb.triCount, axisRef);
 
   // ---------------------------------------------------------------- 四指
+  // fix2：手指短一点、粗一点、并拢一点（原来细长、张开，近看像爪子）；掌心长度往下补 4mm，总手长不变
   const F = [
-    { z: -0.0285, dy: -0.101, len: 0.072, w: 0.009, t: 0.0081, curl: 1, fan: -0.07 },
-    { z: -0.0095, dy: -0.105, len: 0.08, w: 0.0093, t: 0.0083, curl: 1.1, fan: -0.015 },
-    { z: 0.0095, dy: -0.102, len: 0.075, w: 0.0087, t: 0.0079, curl: 1.22, fan: 0.035 },
-    { z: 0.027, dy: -0.094, len: 0.06, w: 0.0076, t: 0.0069, curl: 1.38, fan: 0.085 },
+    { z: -0.0285, dy: -0.105, len: 0.0675, w: 0.0102, t: 0.0091, curl: 1, fan: -0.03 },
+    { z: -0.0095, dy: -0.109, len: 0.0755, w: 0.0105, t: 0.0093, curl: 1.1, fan: -0.006 },
+    { z: 0.0095, dy: -0.106, len: 0.0705, w: 0.0099, t: 0.0089, curl: 1.22, fan: 0.016 },
+    { z: 0.027, dy: -0.098, len: 0.0565, w: 0.0088, t: 0.0079, curl: 1.38, fan: 0.04 },
   ];
   const D2R = Math.PI / 180;
   const fingerRings: number[][] = [];
@@ -158,14 +159,16 @@ export function buildHand(mb: MeshBuilder, d: UpperDims, wristRing: number[], wr
   mb.orient(tPalm0, mb.triCount, axisRef);
   // 指蹼与两头
   const down = new THREE.Vector3(0, -1, 0);
+  // fix2：指蹼与两头的补片按相邻的指管定绕向（按参考方向定会因手指粗细不同而翻面）
+  void down;
   for (const [f, g] of [[ix, md], [md, rg], [rg, lt]] as const) {
-    mb.tOriented(f[7]!, f[6]!, g[2]!, piece, down);
-    mb.tOriented(f[7]!, g[2]!, g[1]!, piece, down);
-    mb.tOriented(f[6]!, f[5]!, g[3]!, piece, down);
-    mb.tOriented(f[6]!, g[3]!, g[2]!, piece, down);
+    mb.tMatch(f[7]!, f[6]!, g[2]!, piece);
+    mb.tMatch(g[2]!, g[1]!, f[7]!, piece);
+    mb.tMatch(f[6]!, f[5]!, g[3]!, piece);
+    mb.tMatch(g[3]!, g[2]!, f[6]!, piece);
   }
-  mb.tOriented(ix[1]!, ix[2]!, ix[3]!, piece, new THREE.Vector3(0, -0.3, -1));
-  mb.tOriented(lt[5]!, lt[6]!, lt[7]!, piece, new THREE.Vector3(0, -0.3, 1));
+  mb.tMatch(ix[1]!, ix[2]!, ix[3]!, piece);
+  mb.tMatch(lt[5]!, lt[6]!, lt[7]!, piece);
 
   // ---------------------------------------------------------------- 拇指
   const R1 = palmRings[2]!, R2 = palmRings[3]!, R3 = palmRings[4]!;
@@ -177,9 +180,10 @@ export function buildHand(mb: MeshBuilder, d: UpperDims, wristRing: number[], wr
   const n0 = new THREE.Vector3().subVectors(lp[2]!, lp[0]!).cross(new THREE.Vector3().subVectors(lp[6]!, lp[0]!)).normalize();
   const outRef = lc.clone().sub(new THREE.Vector3(wrist.x, lc.y, wrist.z)).normalize();
   if (n0.dot(outRef) < 0) n0.negate();
-  const tdir = new THREE.Vector3(-0.3, -0.78, -0.55).normalize();
+  // fix2：拇指贴近食指一点（原来张得很开，拇指和食指之间一道大缝）
+  const tdir = new THREE.Vector3(-0.3, -0.84, -0.44).normalize();
   const TL = 0.064 * hs * (child ? 0.92 : 1);
-  const tr = 0.0108 * hs * fingerW * (child ? 1.1 : 1);
+  const tr = 0.0116 * hs * fingerW * (child ? 1.1 : 1);
   const tbase = lc.clone().addScaledVector(n0, 0.006 * hs).addScaledVector(tdir, 0.014 * hs);
   const e1 = lp[0]!.clone().sub(lc);
   e1.addScaledVector(tdir, -e1.dot(tdir)).normalize();

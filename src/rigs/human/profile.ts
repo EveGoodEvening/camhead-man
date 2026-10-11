@@ -74,14 +74,18 @@ export function profileOf(spec: Readonly<HumanoidSpec>, face?: Readonly<FaceOpts
   return {
     sex, age, build, deity,
     headScale: o.headScale ?? (child ? CHILD_HEAD_SCALE : deity ? DEITY_HEAD_SCALE : 1),
-    bw: o.bw ?? b.w, bd: o.bd ?? b.d, belly: o.belly ?? b.belly,
+    // fix2：女人肩窄 7%（肩关节 x 按 bw），胯宽靠 hipW 补回来（臀围不变）：正面不再是男人的方肩
+    bw: o.bw ?? b.w * (f ? FEMALE_SHOULDER : 1), bd: o.bd ?? b.d, belly: o.belly ?? b.belly,
     bust: o.bust ?? (f ? 1 : 0),
     waistTaper: o.waistTaper ?? (f ? 0.88 : 1),
-    hipW: o.hipW ?? (f ? 1.08 : 1),
+    hipW: o.hipW ?? (f ? 1.08 / FEMALE_SHOULDER : 1),
     kyphosis: o.kyphosis ?? (build === 'hunch' ? 0.21 : age === 'old' ? 0.05 : 0),
     legScale: o.legScale ?? (child ? 0.82 / 0.95 : deity ? 0.84 / 0.95 : 1),
   };
 }
+
+/** fix2：成年女人的 bw 系数（肩宽）。 */
+export const FEMALE_SHOULDER = 0.93;
 
 /** 服装款式缺省（描述旧版外观：短袖 = T 恤圆领、长袖 = 衬衫领；长袍角色 = 袍；塞进裤腰；布鞋）。style.garment 覆盖。 */
 export function garmentOf(spec: Readonly<HumanoidSpec>, style?: Readonly<HumanoidStyle>): GarmentSpec {
@@ -161,7 +165,7 @@ export function jointLayout(p: Readonly<BodyProfile>, s: number, o?: { legacy?: 
 
 // ---------------------------------------------------------------- 地标
 
-/** 地标（PLAN §2.5）：头部在 headSlot 局部 × s × headScale；躯干/手臂/腿 × s（儿童另有系数，见各项）。 */
+/** 地标（PLAN §2.5；fix2：鼻尖前移 4mm、下巴底抬 3mm——圆下颌、挺鼻子）：头部在 headSlot 局部 × s × headScale；躯干/手臂/腿 × s（儿童另有系数，见各项）。 */
 export function landmarksOf(p: Readonly<BodyProfile>, s: number, face?: Readonly<FaceOpts>, layout?: Readonly<JointLayout>): Landmarks {
   const lay = layout ?? jointLayout(p, s);
   const k = s * p.headScale;
@@ -179,8 +183,8 @@ export function landmarksOf(p: Readonly<BodyProfile>, s: number, face?: Readonly
   return {
     head: {
       scale: k,
-      headOrigin: P(0, 0.14, -0.005), crownSkinY: 0.252 * k, chin: P(0, 0.04, -0.088), jawAngleR: P(0.06, 0.07, -0.02),
-      eyeL: P(-0.032, 0.15, -0.093), eyeR: P(0.032, 0.15, -0.093), browY: 0.17 * k, noseTip: P(0, 0.112, -0.122), noseBaseY: 0.105 * k,
+      headOrigin: P(0, 0.14, -0.005), crownSkinY: 0.252 * k, chin: P(0, 0.043, -0.089), jawAngleR: P(0.06, 0.07, -0.02),
+      eyeL: P(-0.032, 0.15, -0.093), eyeR: P(0.032, 0.15, -0.093), browY: 0.17 * k, noseTip: P(0, 0.112, -0.126), noseBaseY: 0.105 * k,
       mouth: P(0, 0.08, -0.098), earL: P(-0.078, 0.135, 0.006), earR: P(0.078, 0.135, 0.006), earHeight: 0.06 * k,
       hairTop: hairTopBy[normHair(face?.hairStyle ?? 'short')], hairTopBy,
       // fix1：发髻大了、盘高了（低髻 'long' 在后颈上方）

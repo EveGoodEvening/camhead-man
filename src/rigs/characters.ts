@@ -17,6 +17,7 @@ import {
 import {
   createHumanoidInternal, type FaceOpts, type HumanoidInternal, type HumanoidMaterialMode, type HumanoidRig, type HumanoidSpec, type HumanoidStyle,
 } from './humanoid';
+import { jointLayout } from './human/profile';
 import { createPaperFigure, vendorAtlas, type PaperRig } from './paper';
 
 export type CharacterKind = 'tudi' | 'wang' | 'lu' | 'huang' | 'zhou' | 'jianguo' | 'kid' | 'bride' | 'apprentice'
@@ -192,9 +193,53 @@ function buildTudi(o: CharacterOpts): Built {
   };
 }
 
+/**
+ * fix2：把挂在某个关节上的刚体配件（局部坐标）换成跟身体同一副骨架的蒙皮网格：位置换到绑定姿势的根空间，
+ * 每个顶点抄身体网格（衣身、袖子、皮肤）上最近顶点的蒙皮。配件跟着衣服一起变形（袖箍贴着袖子）。
+ */
+function skinOntoBody(h: HumanoidInternal, m: THREE.Mesh, joint: 'shoulderL' | 'shoulderR' | 'spine'): THREE.Mesh {
+  const lay = jointLayout(h.profile, h.s);
+  const b = lay.bind[joint];
+  const src = ['sleeves', 'torso', 'skin'].map(n => h.parts[n] as THREE.SkinnedMesh | undefined).filter((x): x is THREE.SkinnedMesh => !!x?.isSkinnedMesh);
+  const host = src[0];
+  if (!host || !host.parent) {
+    h.joints[joint].add(m);
+    return m;
+  }
+  const geo = m.geometry.clone();
+  geo.translate(b[0], b[1], b[2]);
+  const P = geo.attributes.position as THREE.BufferAttribute;
+  const si = new Uint16Array(P.count * 4), sw = new Float32Array(P.count * 4);
+  const v = new THREE.Vector3(), q = new THREE.Vector3();
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i);
+    let best = Infinity, bm: THREE.SkinnedMesh | null = null, bi = -1;
+    for (const sm of src) {
+      const sp = sm.geometry.attributes.position as THREE.BufferAttribute;
+      for (let j = 0; j < sp.count; j++) {
+        const d = q.fromBufferAttribute(sp, j).distanceToSquared(v);
+        if (d < best) { best = d; bm = sm; bi = j; }
+      }
+    }
+    const SI = bm!.geometry.attributes.skinIndex as THREE.BufferAttribute, SW = bm!.geometry.attributes.skinWeight as THREE.BufferAttribute;
+    for (let c = 0; c < 4; c++) { si[i * 4 + c] = SI.getComponent(bi, c); sw[i * 4 + c] = SW.getComponent(bi, c); }
+  }
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  m.geometry.dispose();
+  const out = new THREE.SkinnedMesh(geo, m.material);
+  out.name = m.name;
+  Object.assign(out.userData, m.userData);
+  out.bind(host.skeleton, host.bindMatrix);
+  out.frustumCulled = false;
+  host.parent.add(out);
+  return out;
+}
+
 /** 王奶奶的碎花大襟布衫（年轻时同一件）。 */
 const WANG_GARMENT: HumanoidStyle['garment'] = {
-  top: 'blouse', collar: 'mandarin', placket: 'side_frog', pockets: 'none', tucked: false, hemDrop: 0.1, cuffs: 'band', bottom: 'trousers', shoes: 'cloth',
+  // fix2：布衫下摆长一点（盖过胯，腿显得短，是个矮小的老太太）
+  top: 'blouse', collar: 'mandarin', placket: 'side_frog', pockets: 'none', tucked: false, hemDrop: 0.14, cuffs: 'band', bottom: 'trousers', shoes: 'cloth',
 };
 
 function buildWang(o: CharacterOpts): Built {
@@ -202,16 +247,18 @@ function buildWang(o: CharacterOpts): Built {
   const spec: HumanoidSpec = { height: young ? 1.58 : 1.5, build: young ? 'normal' : 'hunch', shirt: '#5B6E8C', pants: '#2B2A2E', shoes: '#141416', skin: '#C9A080', sleeves: 'long', head: 'human' };
   // 发髻是头发几何（WP-H），颜色跟头发走：老了花白、年轻时乌黑（char2 修掉了“发髻永远是灰的”）
   const face: FaceOpts = young
-    ? { skin: '#C9A080', hair: '#1c1816', hairStyle: 'bun', age: 'young', female: true, seed: 7, head: 'woman', sculpt: { cheekFull: 0.2 }, paint: { blush: 0.25, eyeShape: 'inner_fold', brow: 'arched', lips: '#A44A44' } }
+    // fix2：年轻的王桂芝是山东姑娘的圆脸（宽下颌、饱满的腮、小单眼皮、平眉），不是新娘那张瓜子脸
+    ? { skin: '#C9A080', hair: '#1c1816', hairStyle: 'bun', age: 'young', female: true, seed: 7, head: 'woman', sculpt: { cheekFull: 0.6, jawW: 0.45, faceLen: -0.15, noseW: 0.3, noseLen: -0.1, eyeSize: -0.3, browRidge: -0.4, cheekbone: 0.35, chin: -0.1 }, paint: { blush: 0.3, eyeShape: 'single', brow: 'straight', lips: '#A44A44' } }
     : {
       skin: '#C9A080', hair: '#8D8A86', hairStyle: 'bun', age: 'old', female: true, seed: 7, head: 'oldWoman',
-      sculpt: { cheekFull: 0.4, chin: -0.3, lipFull: -0.5 },
-      paint: { eyeShape: 'droop', brow: 'thin', wrinkles: 0.75, spots: 0.12, blush: 0.18 },
+      sculpt: { cheekFull: 0.5, chin: -0.35, lipFull: -0.6, jawW: 0.2, noseW: 0.25 },
+      // fix2：皱纹、老人斑、眼皮下垂按 PLAN（0.8 / 0.3），嘴角往下
+      paint: { eyeShape: 'droop', brow: 'thin', wrinkles: 0.85, spots: 0.3, blush: 0.15, smile: -0.35 },
     };
   const floral = floralTexture('#5B6E8C', 3);
   const h = createHumanoidInternal(spec, face, {
     torsoMap: floral, sleeveMap: floral, shoeMap: clothShoeTexture(), garment: WANG_GARMENT,
-    profile: young ? {} : { kyphosis: 0.35 },
+    profile: young ? {} : { kyphosis: 0.42 },
   });
   const s = h.s;
   const pin = ACCESSORIES.hairpin(h);
@@ -220,15 +267,73 @@ function buildWang(o: CharacterOpts): Built {
   const props: Record<string, THREE.Object3D> = { bun: pin };
   let post: ((dt: number) => void) | undefined;
   if (!young) {
-    // 竹篮挎在左臂弯：篮子挂在腰侧，左臂弯着托住提手
-    const basket = ACCESSORIES.basket(s);
-    basket.position.set(-0.24 * s, 0.02 * s, -0.08 * s);
+    // fix2：竹篮挎在左小臂上：胳膊往前下方伸（小臂往外撇一点、离开胯），提梁顶搭在肘弯前面的小臂上，篮子竖直吊着（抵消驼背的前倾），
+    // 手搭在篮沿的另一头。胳膊角度按“上臂、小臂的朝向”解一次（spine 局部），提梁顶的位置由解出来的小臂定。
+    const bs = s * 0.86, handleH = 0.1;
+    const basket = ACCESSORIES.basket(bs, handleH);
     h.joints.spine.add(basket);
     h.adopt(basket);
     props.basket = basket;
-    post = () => holdArm(h, 'L', [0.3, 0, -0.3], 1.25);
+    const handleTop = (0.07 + handleH) * bs;
+    let arm: { sh: [number, number, number]; el: number; H: THREE.Vector3; yaw: number } | null = null;
+    post = () => {
+      arm ??= solveBasketArm(h, s);
+      holdArm(h, 'L', arm.sh, arm.el);
+      // 篮子绕提梁顶吊着：抵消 spine（与 hips）的前倾，提梁顶留在 H；提梁的平面横在小臂上
+      const tilt = -(h.joints.spine.rotation.x + h.joints.hips.rotation.x);
+      basket.rotation.set(tilt, arm.yaw, 0);
+      basket.position.set(arm.H.x, arm.H.y - handleTop * Math.cos(tilt), arm.H.z + handleTop * Math.sin(tilt));
+      // 手腕往下压，手掌搭在篮沿上
+      h.extraJoints.wristL.rotation.set(-0.55, 0, 0.1);
+    };
   }
   return { h, props, post };
+}
+
+/**
+ * fix2：王奶奶挎篮子的左臂（spine 局部的正向运动学 + 坐标下降）：上臂往前 ~14°、往外 ~13°，小臂朝前下方 ~27°、往外 ~28°（世界方向，
+ * 按当前 spine 前倾换到 spine 局部）。返回 holdArm 用的肩 [x, y, z] 与肘、提梁顶 H（小臂 38% 处、轴线下一个小臂半径）与篮子的偏航。
+ */
+function solveBasketArm(h: HumanoidInternal, s: number): { sh: [number, number, number]; el: number; H: THREE.Vector3; yaw: number } {
+  const sh = h.joints.shoulderL, el = h.joints.elbowL;
+  const wristY = h.land.arm.wristY;
+  const lean = h.joints.spine.rotation.x + h.joints.hips.rotation.x;
+  const toSpine = (v: THREE.Vector3) => v.normalize().applyAxisAngle(new THREE.Vector3(1, 0, 0), -lean);
+  const wantUpper = toSpine(new THREE.Vector3(-0.22, -0.95, -0.24));
+  const wantFore = toSpine(new THREE.Vector3(-0.38, -0.55, -0.74));
+  const Ms = new THREE.Matrix4(), Me = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const one = new THREE.Vector3(1, 1, 1);
+  const fk = (x: readonly number[], local: THREE.Vector3): THREE.Vector3 => {
+    Ms.compose(sh.position, q.setFromEuler(e.set(x[0]!, x[1]!, x[2]!)), one);
+    Me.compose(el.position, q.setFromEuler(e.set(x[3]!, 0, 0)), one);
+    return local.clone().applyMatrix4(Me).applyMatrix4(Ms);
+  };
+  const S0 = sh.position.clone();
+  const cost = (x: readonly number[]): number => {
+    const E = fk(x, new THREE.Vector3()), W = fk(x, new THREE.Vector3(0, wristY, 0));
+    const u = E.clone().sub(S0).normalize(), f = W.clone().sub(E).normalize();
+    return (1 - u.dot(wantUpper)) + 1.5 * (1 - f.dot(wantFore)) + 0.01 * x[1]! * x[1]!;
+  };
+  const x = [-0.2, 0, -0.2, 0.8];
+  let step = 0.2, c0 = cost(x);
+  for (let it = 0; it < 600 && step > 1e-5; it++) {
+    let improved = false;
+    for (let i = 0; i < x.length; i++) {
+      for (const d of [step, -step]) {
+        x[i]! += d;
+        const c = cost(x);
+        if (c < c0) { c0 = c; improved = true; break; }
+        x[i]! -= d;
+      }
+    }
+    if (!improved) step *= 0.5;
+  }
+  const E = fk(x, new THREE.Vector3()), W = fk(x, new THREE.Vector3(0, wristY, 0));
+  const up = toSpine(new THREE.Vector3(0, 1, 0));
+  const H = E.clone().lerp(W, 0.58).addScaledVector(up, -0.03 * s);
+  const fd = W.clone().sub(E);
+  const yaw = Math.atan2(-fd.x, -fd.z);
+  return { sh: [x[0]!, x[1]!, x[2]!], el: x[3]!, H, yaw };
 }
 
 function buildLu(o: CharacterOpts): Built {
@@ -264,7 +369,8 @@ function buildZhou(o: CharacterOpts): Built {
   // char2：宽下巴、大鼻头、两颊略凹、眉弓高；眼角耷拉、眉毛又粗又乱（花白）、皱纹、一点胡茬
   const face: FaceOpts = {
     skin: '#A07E66', hair: '#4A4642', hairStyle: 'crop', age: 'old', seed: 1960, head: 'oldMan',
-    sculpt: { jawW: 0.6, chin: 0.1, noseW: 0.5, noseLen: 0.2, cheekFull: -0.2, browRidge: 0.4, earSize: 0.2, faceLen: -0.15 },
+    // fix2：宽下颌、大鼻头更明显（原来读成一张窄长的脸）
+    sculpt: { jawW: 0.8, chin: 0.15, noseW: 0.8, noseLen: 0.3, cheekFull: -0.05, browRidge: 0.45, earSize: 0.25, faceLen: -0.3, cheekbone: 0.2 },
     paint: { eyeShape: 'droop', brow: 'bushy', wrinkles: 0.7, stubble: 0.25 },
   };
   const h = createHumanoidInternal(spec, face, {
@@ -276,8 +382,8 @@ function buildZhou(o: CharacterOpts): Built {
   });
   const s = h.s;
   const collar = collarOr(h, () => ACCESSORIES.shirtCollar(s, PALETTE.UNIFORM, { open: false }), h.joints.spine);
-  const band = ACCESSORIES.armband(h);
-  h.joints.shoulderL.add(band);
+  // fix2：袖箍蒙在袖子上（每个点抄最近那块衣料的骨骼权重）：趴桌时肩膀、袖子变形，袖箍跟着贴着，不再是一圈悬空的硬环
+  const band = skinOntoBody(h, ACCESSORIES.armband(h), 'shoulderL');
   h.adopt(band);
   const props: Record<string, THREE.Object3D> = { collar, armband: band };
   const cap = ACCESSORIES.cap('cloth', h);
@@ -287,13 +393,16 @@ function buildZhou(o: CharacterOpts): Built {
   // 搪瓷缸：把手（缸身 +x 侧）落在掌心，缸身在手的内侧
   const mug = ACCESSORIES.mug(s);
   // fix1：缸把落在握起来的拳心里（掌心往里 2cm、指根往下 2.5cm），缸身在指尖外面
-  mug.position.set(-0.074 * s, h.land.arm.palmCentreY - 0.026 * s, -0.012 * s);
+  // fix2：只有缸把在拳头里（把手的竖条贴着手心、四指从把手圈里穿过去），缸身在指尖外面，手指不再穿进缸身
+  mug.position.set(-0.091 * s, h.land.arm.palmCentreY - 0.05 * s, -0.004 * s);
   h.joints.elbowR.add(mug);
   h.adopt(mug);
   props.mug = mug;
   let variant = o.variant ?? 'cap';
+  // fix2：回放里脸上一团雪花时不戴帽子（帽檐从雪花里戳出来，是一块蓝色的椭圆）
+  const snowFace = o.faceMask ?? o.look === 'replay';
   const applyVariant = () => {
-    cap.visible = variant !== 'nocap';
+    cap.visible = variant !== 'nocap' && !snowFace;
     mug.visible = variant !== 'slump';
   };
   applyVariant();
@@ -361,7 +470,8 @@ function buildBride(): Built {
   const spec: HumanoidSpec = { height: 1.6, build: 'slim', shirt: '#B3202A', pants: '#B3202A', shoes: '#7A1018', skin: '#D8B090', sleeves: 'long', robe: true, head: 'human' };
   const face: FaceOpts = {
     skin: '#D8B090', hair: '#120e0c', hairStyle: 'long', age: 'young', female: true, seed: 1990, head: 'woman',
-    sculpt: { lipFull: 0.3, cheekbone: 0.2 },
+    // fix2：新娘：鹅蛋脸、大眼、小鼻、小下巴（和邻居、年轻王奶奶不是一张脸）
+    sculpt: { lipFull: 0.35, cheekbone: 0.25, faceLen: -0.2, jawW: -0.2, chin: -0.25, eyeSize: 0.4, noseLen: -0.25, cheekFull: 0.3 },
     paint: { lips: '#B0302E', blush: 0.3, eyeShape: 'inner_fold', brow: 'arched' },
   };
   // 红缎子对襟小袄（立领、盘扣）+ 红长裙、绣花鞋；收腰
@@ -410,7 +520,8 @@ function buildWorker(): Built {
   const spec: HumanoidSpec = { height: 1.76, build: 'stout', shirt: '#D86A1E', pants: '#2C3440', shoes: '#1a1816', skin: '#B08A6A', sleeves: 'long', head: 'human' };
   const face: FaceOpts = {
     skin: '#B08A6A', hair: '#15120f', hairStyle: 'crop', age: 'young', seed: 28, head: 'man',
-    sculpt: { jawW: 0.5, cheekFull: 0.3, noseW: 0.2 }, paint: { stubble: 0.4, brow: 'straight' },
+    // fix2：下颌没那么方（原来结尾特写里是一块砖），腮帮子圆过去
+    sculpt: { jawW: 0.12, cheekFull: 0.35, noseW: 0.25, chin: 0.1 }, paint: { stubble: 0.4, brow: 'straight' },
   };
   // 橙色工装（衬衫领、两个胸兜、袖子挽起）、工装裤（膝盖补丁）、靴子、深橙安全帽
   const h = createHumanoidInternal(spec, face, {
@@ -434,11 +545,15 @@ function buildNeighbor(o: CharacterOpts): Built {
   const old = r() < 0.4;
   const seed = Math.floor(r() * 999);
   const sl = () => range(r, -0.4, 0.4);
-  const sculpt = { jawW: sl(), cheekFull: sl(), noseLen: sl(), noseW: sl(), faceLen: sl(), chin: sl(), cheekbone: sl() };
+  // fix2：眼形、眉形、眼睛大小、嘴唇、眉弓也随人（原来女邻居、新娘、年轻王奶奶一张脸）；用另一条随机流，不改原来的体型/衣服
+  const r2 = rng((o.seed ?? 2008) * 31 + 7);
+  const sculpt = { jawW: sl(), cheekFull: sl(), noseLen: sl(), noseW: sl(), faceLen: sl(), chin: sl(), cheekbone: sl(), eyeSize: range(r2, -0.4, 0.4), lipFull: range(r2, -0.4, 0.4), browRidge: range(r2, -0.4, 0.4) };
+  const eyeShape = pick(r2, ['single', 'inner_fold', 'double'] as const);
+  const brow = female ? pick(r2, ['arched', 'straight', 'thin'] as const) : pick(r2, ['straight', 'bushy', 'thin'] as const);
   const hairStyle = female ? 'bun' : old ? pick(r, ['thin_old', 'crop'] as const) : pick(r, ['crop', 'side_part'] as const);
   const face: FaceOpts = {
     skin, hair: old ? '#8a8680' : '#15120f', hairStyle, age: old ? 'old' : 'young', female, seed, sculpt,
-    paint: female ? { blush: range(r, 0.1, 0.25), wrinkles: old ? 0.6 : 0 } : { stubble: range(r, 0, 0.3), wrinkles: old ? 0.6 : 0 },
+    paint: female ? { blush: range(r, 0.1, 0.25), wrinkles: old ? 0.7 : 0, eyeShape, brow } : { stubble: range(r, 0, 0.3), wrinkles: old ? 0.7 : 0, eyeShape, brow },
   };
   const top = female ? pick(r, ['blouse', 'tshirt'] as const) : pick(r, ['tshirt', 'work_shirt'] as const);
   const h = createHumanoidInternal(spec, face, {

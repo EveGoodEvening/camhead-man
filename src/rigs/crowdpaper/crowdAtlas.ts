@@ -141,7 +141,8 @@ function paintBody(o: CrowdOutfit, s: number, t: number): RGB {
     }
     // ---- 头发（发际线以上；边缘几根飞丝，不是一刀切）
     const hl = hairline(th) + 0.0018 * Math.sin(th * 37) + 0.0012 * Math.sin(th * 91 + 1.3);
-    const hairK = smoothstep(hl - 0.0015, hl + 0.003, y);
+    // fix2：发际线软一点、碎一点
+    const hairK = smoothstep(hl - 0.003 + 0.002 * vnoise(th * 70, 3.1), hl + 0.004, y);
     if (hairK > 0) {
       // 顺着头发走的细纹：后脑往下梳，前面往后梳
       const strand = 0.86 + 0.14 * vnoise(th * 60, y * 25) + 0.06 * hash2(Math.floor(th * 220), 3);
@@ -237,7 +238,8 @@ function paintArms(o: CrowdOutfit, s: number, t: number): RGB {
   if (t > tPalm) {
     // 连指手：指缝几道细线（手背、手心各两道）、指节略暗
     const ft = ARM_T[13]! + 0.012;
-    if (t > ft) for (const ss of [0.045, 0.955, 0.455, 0.545, 0.0, 0.5]) if (Math.abs(s - ss) < 0.007) c = mul(c, 0.8);
+    // fix2：指缝更清楚（近看不是一把勺子）
+    if (t > ft) for (const ss of [0.045, 0.955, 0.455, 0.545, 0.0, 0.5]) if (Math.abs(s - ss) < 0.009) c = mul(c, 0.66);
     if (Math.abs(t - ARM_T[13]!) < 0.006) c = mul(c, 0.93);
     c = mix(c, [210, 130, 112], 0.08);
   } else if (o.sleeves === 'short') {

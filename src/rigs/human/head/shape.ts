@@ -24,13 +24,14 @@ const W_KNOTS: readonly (readonly [number, number])[] = [
 ];
 const F_KNOTS: readonly (readonly [number, number])[] = [
   [0.035, 0.079], [0.045, 0.0888], [0.06, 0.0952], [0.075, 0.0985], [0.09, 0.1003], [0.105, 0.1012], [0.12, 0.1018], [0.135, 0.1021],
-  [0.15, 0.1022], [0.165, 0.1012], [0.18, 0.0965], [0.195, 0.0895], [0.21, 0.0805], [0.225, 0.0685], [0.238, 0.0514], [0.247, 0.031], [0.252, 0],
+  [0.15, 0.1022], [0.165, 0.1008], [0.18, 0.0952], [0.195, 0.0876], [0.21, 0.0785], [0.225, 0.0672], [0.238, 0.0514], [0.247, 0.031], [0.252, 0],
 ];
 const B_KNOTS: readonly (readonly [number, number])[] = [
   [0.035, 0.03], [0.06, 0.04], [0.075, 0.046], [0.085, 0.055], [0.095, 0.068], [0.105, 0.081], [0.12, 0.0935], [0.14, 0.0995],
   [0.165, 0.0982], [0.19, 0.0905], [0.21, 0.0805], [0.225, 0.067], [0.238, 0.049], [0.247, 0.029], [0.252, 0],
 ];
-const NF_KNOTS: readonly (readonly [number, number])[] = [[0.035, 1.9], [0.06, 2.05], [0.09, 2.2], [0.12, 2.35], [0.15, 2.45], [0.18, 2.4], [0.21, 2.2], [0.252, 2.0]];
+// fix2：脸正面横向更圆（颊面往后退，鼻、唇、下巴、眉弓相对颊面更突出；侧面不再是一块竖直的平板）
+const NF_KNOTS: readonly (readonly [number, number])[] = [[0.035, 1.85], [0.06, 1.95], [0.09, 2.04], [0.12, 2.16], [0.15, 2.3], [0.18, 2.32], [0.21, 2.15], [0.252, 2.0]];
 const sq = (k: readonly (readonly [number, number])[]) => k.map(([y, v]) => [y, v * v] as const);
 const W2 = monotone(sq(W_KNOTS)), F2 = monotone(sq(F_KNOTS)), B2 = monotone(sq(B_KNOTS));
 const NF = polyline(NF_KNOTS);
@@ -69,9 +70,10 @@ export function headSurface(p: HeadParams): HeadSurface {
     let W = Math.sqrt(Math.max(0, W2(ye))), F = Math.sqrt(Math.max(0, F2(ye))), B = Math.sqrt(Math.max(0, B2(ye)));
     // fix1：jawW 管整段下颌（下颌角到下巴底），幅度加大，宽下巴的人（老周、工人）一眼看得出
     const ck = S('cheekFull') < 0 ? 0.5 * S('cheekFull') : S('cheekFull');
-    const wm = 1 + 0.11 * S('jawW') * bump(ye, 0.064, 0.034) + 0.045 * ck * bump(ye, 0.095, 0.03) + 0.025 * S('cheekbone') * bump(ye, 0.13, 0.014)
+    const wm = 1 + 0.15 * S('jawW') * bump(ye, 0.066, 0.036) + 0.045 * ck * bump(ye, 0.095, 0.03) + 0.025 * S('cheekbone') * bump(ye, 0.13, 0.014)
       - 0.15 * Math.max(0, S('chin')) * bump(ye, 0.045, 0.016) - 0.035 * fl * (1 - sstep(0.08, 0.13, ye))
-      + (child ? 0.035 * sstep(0.15, 0.2, ye) + 0.03 * bump(ye, 0.085, 0.03) : 0) + (deity ? 0.05 : 0)
+      // fix2：孩子的下巴小而圆（原来下半张脸方方的一块）
+      + (child ? 0.035 * sstep(0.15, 0.2, ye) + 0.03 * bump(ye, 0.09, 0.026) - 0.11 * (1 - sstep(0.035, 0.078, ye)) : 0) + (deity ? 0.05 : 0)
       + (female ? -0.02 * (1 - sstep(0.08, 0.14, ye)) : 0);
     W *= wm;
     F += 0.0042 * S('chin') * bump(ye, 0.05, 0.013) + (deity ? 0.007 * bump(ye, 0.205, 0.022) : 0) + (child ? 0.004 * bump(ye, 0.2, 0.025) : 0)
@@ -123,9 +125,9 @@ export function headSurface(p: HeadParams): HeadSurface {
   const yr = 0.1615 - (child ? 0.004 : 0);
   const yt = (child ? 0.1195 : female ? 0.1162 : 0.114) - 0.005 * nl;
   const yb = (child ? 0.1115 : female ? 0.1068 : 0.1035) - 0.003 * nl;
-  const Ht = 0.0228 * noseK * (1 + 0.1 * nl);
+  const Ht = 0.0252 * noseK * (1 + 0.1 * nl); // fix2：鼻子更挺（侧面看得出鼻梁和鼻头）
   const wt = 0.0118 * (1 + 0.18 * nw) * (child ? 0.86 : female ? 0.97 : 1);
-  const Hroot = Math.max(0.0004, (child ? 0.0006 : 0.0022) + 0.0016 * nbr);
+  const Hroot = Math.max(0.0004, (child ? 0.0006 : female ? 0.0018 : 0.0022) + 0.0016 * nbr);
   const hump = p.preset === 'oldMan' ? 0.0018 * Math.max(0, nbr) : 0.0008 * Math.max(0, nbr);
   const alarX = 0.0135 * (1 + 0.2 * nw) * (child ? 0.8 : female ? 0.92 : 1);
   const alarH = 0.0085 * noseK;
@@ -146,36 +148,41 @@ export function headSurface(p: HeadParams): HeadSurface {
     const al = alarH * g2(Math.abs(x) - alarX, y - (yb + 0.0052), 0.0048, 0.0056);
     return smax(main, al, 0.003);
   };
-  const browA = Math.max(0, (female || child ? 0.0018 : 0.0038) * (1 + 0.55 * S('browRidge')));
+  const browA = Math.max(0, (female || child ? 0.0021 : 0.0044) * (1 + 0.55 * S('browRidge')));
   const lipK = Math.max(0.25, 1 + 0.6 * S('lipFull'));
   const eyeK = 1 + 0.25 * S('eyeSize');
   const old = p.old && !deity;
-  const nlDepth = p.old ? 0.0011 : child ? 0 : 0.0004;
+  // fix2：老人的法令纹、眼袋、下垂的腮更深（头像距离、钠灯下看得出年纪）
+  const nlDepth = p.old ? (deity ? 0.0012 : 0.0021) : child ? 0 : 0.0004;
   const features = (P: Readonly<V3>, n: Readonly<V3>): number => {
     const x = P[0], y = P[1], ax = Math.abs(x);
     const fr = sstep(0.15, 0.65, -n[2]);
     const frN = sstep(0.3, 0.8, -n[2]);
     const sf = sstep(-0.35, 0.3, -n[2]);
     let d = 0;
-    d += browA * (g2(ax - 0.031, y - 0.1715, 0.024, 0.0075) + 0.55 * g2(x, y - 0.166, 0.011, 0.008)) * fr;
+    // fix2：眉间（glabella）比鼻根更突出（侧面看鼻根是凹进去的）
+    d += browA * (g2(ax - 0.031, y - 0.1715, 0.024, 0.0075) + 1.05 * g2(x, y - 0.167, 0.012, 0.0075)) * fr;
     d -= 0.0056 * eyeK * g2(ax - 0.033, y - 0.151, 0.0158, 0.0102) * fr;
     d += 0.0017 * g2(ax - 0.033, y - 0.1548, 0.012, 0.0036) * fr;
     d += 0.0009 * g2(ax - 0.034, y - 0.1438, 0.011, 0.0028) * fr;
-    if (p.old) d += 0.0011 * g2(ax - 0.035, y - 0.1385, 0.012, 0.0035) * fr;
+    if (p.old) d += (deity ? 0.0011 : 0.0019) * g2(ax - 0.035, y - 0.1385, 0.012, 0.0035) * fr;
+    // 老人：嘴角两边往下的“木偶纹”外侧腮肉下垂（下颌线上、下巴两侧鼓一点）
+    if (old) d += 0.0022 * g2(ax - 0.042, y - 0.066, 0.012, 0.012) * sf - 0.0009 * g2(ax - 0.03, y - 0.07, 0.004, 0.01) * fr;
     d -= (0.0018 + (old ? 0.0012 : 0)) * g2(ax - 0.064, y - 0.168, 0.012, 0.016) * sf;
     d += Math.max(0, 0.002 * (1 + 0.6 * S('cheekbone'))) * g2(ax - 0.053, y - 0.128, 0.019, 0.018) * sf;
     // fix1：瘦脸（cheekFull < 0）的颊窝浅一半、范围大一点：钠灯下不再是一块硬边的黑三角
     const cf = S('cheekFull');
     d += cf >= 0 ? 0.0032 * cf * g2(ax - 0.046, y - 0.098, 0.019, 0.017) * sf : 0.0016 * cf * g2(ax - 0.048, y - 0.1, 0.026, 0.024) * sf;
     if (old) d -= 0.0004 * g2(ax - 0.054, y - 0.104, 0.022, 0.022) * sf;
-    d += 0.0022 * g2(x, y - 0.09, 0.034, 0.018) * fr;
-    d += 0.0031 * lipK * g2(x, y - 0.0868, 0.0205, 0.0041) * fr - 0.0005 * g2(x, y - 0.0892, 0.004, 0.002) * fr;
-    d += 0.0029 * lipK * g2(x, y - 0.0748, 0.0178, 0.0048) * fr;
+    // fix2：口周（上下颌的弓）和上下唇更突出，侧面看得出嘴
+    d += 0.0029 * g2(x, y - 0.088, 0.032, 0.019) * fr;
+    d += 0.0037 * lipK * g2(x, y - 0.0868, 0.0205, 0.0041) * fr - 0.0006 * g2(x, y - 0.0892, 0.004, 0.002) * fr;
+    d += 0.0034 * lipK * g2(x, y - 0.0748, 0.0178, 0.0048) * fr;
     d -= 0.0018 * g2(x, y - 0.0808, 0.0245, 0.0017) * fr;
     d -= 0.0013 * g2(ax - 0.0265, y - 0.0805, 0.0045, 0.0045) * fr;
     d -= 0.0006 * g2(x, y - 0.0955, 0.0028, 0.0055) * fr;
-    d += 0.0021 * Math.max(0.2, 1 + 0.5 * S('chin')) * g2(x, y - 0.053 + dLow, 0.0145, 0.0105) * fr;
-    d -= 0.0012 * g2(x, y - 0.0655 + dLow * 0.5, 0.013, 0.0038) * fr;
+    d += 0.0026 * Math.max(0.2, 1 + 0.5 * S('chin')) * g2(x, y - 0.053 + dLow, 0.0145, 0.0105) * fr;
+    d -= 0.0019 * g2(x, y - 0.0655 + dLow * 0.5, 0.013, 0.0038) * fr;
     d += Math.max(0, 0.0016 * (1 + S('jawW'))) * g2(ax - 0.057, y - 0.072 + dLow, 0.012, 0.011) * sf;
     if (nlDepth > 0) {
       // 法令纹：鼻翼外侧 → 嘴角外侧的一道沟，外侧的脸颊鼓一点
@@ -200,8 +207,8 @@ export function headSurface(p: HeadParams): HeadSurface {
     // 往后梳的发型（发髻、低髻）额前是贴着的：长厚得更慢
     // fix1：两鬓与耳后从 0 慢慢长厚（推短的鬓角没有一道头盔边）；额前保留一点发帘的厚边
     const frontK = 1 - sstep(35 * DEG, 65 * DEG, ap);
-    const start = hair.bun ? 0.04 : hair.fringe ? 0.04 + 0.22 * frontK : 0.05;
-    let grow = start + (1 - start) * sstep(lo - hair.ramp, lo + (hair.bun ? 18 : 9 + 7 * (1 - frontK)) * DEG, alpha);
+    const start = hair.bun ? 0.0 : hair.fringe ? 0.04 + 0.22 * frontK : 0.05;
+    let grow = start + (1 - start) * sstep(lo - hair.ramp, lo + (hair.bun ? 24 : 9 + 7 * (1 - frontK)) * DEG, alpha);
     grow *= 1 - 0.55 * hairFade(hair, psi, alpha);
     if (hair.top) grow *= 0.18 + 0.82 * (1 - sstep(hair.top(ap) - 9 * DEG, hair.top(ap) + hair.ramp, alpha));
     return t * e * grow;
@@ -344,10 +351,12 @@ export function addShell(out: HeadMeshData, surf: HeadSurface, seam: SeamU): voi
       uvs.push([u, vOfAlpha(a)]);
     }
     // 下颌底面：颈口 → 下颌线，两行，略鼓
-    const S = bottom[c]!, J = pts[0]!;
+    const S = bottom[c]!, J = pts[0]!, F1 = pts[1]!;
     const lerpRows: V3[] = [];
-    for (const t of [0.36, 0.7]) {
-      const q: V3 = [S.P[0] + (J[0] - S.P[0]) * t, S.P[1] + (J[1] - S.P[1]) * t, S.P[2] + (J[2] - S.P[2]) * t];
+    const L = (a: Readonly<V3>, b: Readonly<V3>, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    {
+      const t = 0.33;
+      const q = L(S.P, J, t);
       const o: V3 = [q[0] - C[0], 0, q[2] - C[2]];
       norm(o);
       o[1] = -0.6;
@@ -355,13 +364,22 @@ export function addShell(out: HeadMeshData, surf: HeadSurface, seam: SeamU): voi
       const b = 0.0016 * Math.sin(Math.PI * t);
       lerpRows.push([q[0] + o[0] * b, q[1] + o[1] * b, q[2] + o[2] * b]);
     }
-    const all = [S.P, ...lerpRows, ...pts];
-    const uvAll: [number, number][] = [S.P, ...lerpRows].map(q => {
+    // fix2：下颌线不再是一道刀刃（下颌底面与脸几乎成直角）：从底面（S→J 的 62% 处）到脸上一行（F1）以 J 为控制点的二次曲线，
+    // 下颌底这一行、下颌线这一行落在曲线上——侧面看下巴、下颌角是圆过去的
+    const E0 = L(S.P, J, 0.62);
+    const bez = (t: number): V3 => {
+      const a = (1 - t) * (1 - t), m = 2 * t * (1 - t), e = t * t;
+      return [a * E0[0] + m * J[0] + e * F1[0], a * E0[1] + m * J[1] + e * F1[1], a * E0[2] + m * J[2] + e * F1[2]];
+    };
+    lerpRows.push(bez(0.3));
+    const Jn = bez(0.68);
+    const all = [S.P, ...lerpRows, Jn, ...pts.slice(1)];
+    const uvAll: [number, number][] = [S.P, ...lerpRows, Jn].map(q => {
       const [uu, vv] = uvOfPoint(q[0], q[1], q[2]);
       return [c === 0 ? 0 : c === N ? 1 : uu, vv] as [number, number];
     });
     colPts.push(all);
-    colUv.push([...uvAll, ...uvs]);
+    colUv.push([...uvAll, ...uvs.slice(1)]);
   }
   // 顶点：按行排（第 r 行第 c 列 = P0 + r·NC + c）
   for (let r = 0; r < rows; r++) {
@@ -580,6 +598,12 @@ function addEar(out: HeadMeshData, surf: HeadSurface, side: 1 | -1): void {
     if (i < base + 3 * n || i === centre) return 0;
     return nn[0] * en[0] + nn[1] * en[1] + nn[2] * en[2];
   });
+  // fix2：耳轮往耳甲里折的那几圈法线往耳朵外法线偏一半（魂影的边缘光不再沿耳轮里沿亮出一串虚线）
+  for (let i = base + 2 * n; i <= centre; i++) {
+    const nx = out.nor[i * 3]! + 0.8 * en[0], ny = out.nor[i * 3 + 1]! + 0.8 * en[1], nz = out.nor[i * 3 + 2]! + 0.8 * en[2];
+    const l = Math.hypot(nx, ny, nz) || 1;
+    out.nor[i * 3] = nx / l; out.nor[i * 3 + 1] = ny / l; out.nor[i * 3 + 2] = nz / l;
+  }
   out.idx.push(...idx);
 }
 

@@ -165,7 +165,9 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
         if (pt.blush > 0) c = mix(c, blushC, Math.min(0.5, pt.blush * 0.85 * g2(ax - 0.047, p.y - 0.11, 0.017, 0.014) * fr));
         // 额头略亮、眼下略暗（老人更明显）
         c = mul(c, 1 + 0.03 * g2(p.x, p.y - 0.19, 0.04, 0.02) * fr);
-        c = mul(c, 1 - (hp.old ? 0.11 : 0.05) * g2(ax - 0.034, p.y - 0.139, 0.014, 0.005) * fr);
+        c = mul(c, 1 - (hp.old ? 0.17 : 0.05) * g2(ax - 0.034, p.y - 0.139, 0.015, 0.006) * fr);
+        // fix2：老人的颊下、嘴角外暗一点（脸往下坠），太阳穴略凹的暗
+        if (hp.old && !hp.deity) c = mul(c, 1 - 0.07 * g2(ax - 0.04, p.y - 0.075, 0.012, 0.018) * fr - 0.05 * g2(ax - 0.062, p.y - 0.165, 0.01, 0.015));
         // 上眼睑与眼窝内侧的一点影子
         c = mul(c, 1 - 0.06 * g2(ax - 0.022, p.y - 0.152, 0.006, 0.008) * fr);
         if (male && pt.stubble > 0) {
@@ -175,7 +177,8 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
           const area = sstep(0.1, 0.093, p.y) * sstep(0.03, 0.045, p.y) * (1 - g2(p.x, p.y - 0.0805, 0.024, 0.0075)) * jawline
             * (1 - sstep(0.05, 0.064, ax)) * sstep(0.1, 0.35, p.front + 0.25);
           const grain = noise(X * 1.3, Y * 1.1) > 0.45 ? 1 : 0.35;
-          c = mix(c, stubC, Math.max(0, Math.min(0.32, pt.stubble * area * grain * 0.55)));
+          // fix2：胡茬看得出来（原来 0.5 的胡茬在头像距离几乎看不见）
+          c = mix(c, stubC, Math.max(0, Math.min(0.48, pt.stubble * area * grain * 0.95)));
         }
         for (const [sx, sy, sr] of spots) {
           const k = g2(p.x - sx, p.y - sy, sr, sr * 0.8) * fr;
@@ -264,8 +267,11 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
       let m = hairCover(def, psi, alpha + jit, 1.9);
       // fix1：往后梳的发型，发际线那一圈头发稀、透出头皮（不是一道齐刘海的深色边）
       if (def.bun) {
+        // fix2：往后梳的头发在发际线那一圈是一缕一缕往后梳的细发（透头皮、顺着梳向的条纹），宽 ~12°，不是一道帽檐
         const lo = hairEdge(def, psi);
-        m *= 0.55 + 0.45 * sstep(lo, lo + 7 * DEG, alpha);
+        const band = 1 - sstep(lo + 2 * DEG, lo + 13 * DEG, alpha);
+        const streak = 0.55 + 0.45 * noise(X * 2.2 + 11, Y * 0.18);
+        m *= (0.32 + 0.68 * sstep(lo - 1 * DEG, lo + 12 * DEG, alpha)) * (1 - band * (1 - streak));
       }
       // fix1：推短的两鬓透出头皮（发色与肤色各半，带一点颗粒），不是一圈实心的头盔边
       const fd = hairFade(def, psi, alpha);
@@ -363,9 +369,10 @@ function paintEyes(g: CanvasRenderingContext2D, hp: HeadParams, pt: ReturnType<t
     const sc = [Math.abs(fp(cx + 0.001, cy)[0] - fp(cx, cy)[0]) * 1000, Math.abs(fp(cx, cy + 0.001)[1] - fp(cx, cy)[1]) * 1000] as const;
     const ir = 0.0058 * es * (hp.child ? 1.08 : 1);
     const grad = g.createRadialGradient(ix, iy, 0, ix, iy, ir * sc[0]);
-    grad.addColorStop(0, '#3e2a1b');
-    grad.addColorStop(0.7, '#2f1f14');
-    grad.addColorStop(1, '#1e140e');
+    // fix2：虹膜偏中性的深棕（魂影的青色调下不再泛红）
+    grad.addColorStop(0, '#33291f');
+    grad.addColorStop(0.7, '#261e17');
+    grad.addColorStop(1, '#16110d');
     g.fillStyle = grad;
     g.beginPath();
     g.ellipse(ix, iy, ir * sc[0], ir * sc[1], 0, 0, Math.PI * 2);
@@ -553,11 +560,14 @@ function paintMouth(g: CanvasRenderingContext2D, hp: HeadParams, pt: ReturnType<
 // ---------------------------------------------------------------- 皱纹
 
 function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, path: PathFn, skin: RGB, pxmm: number): void {
-  const dark = (a: number) => css(mul(skin, 0.62), a * k);
-  const lite = (a: number) => css(mul(skin, 1.12), a * k);
+  // fix2：皱纹深一点、宽一点（原来头像距离、钠灯下几乎看不见，老人读成三四十岁）
+  const kk = Math.min(1.25, k * 1.55);
+  const dark = (a: number) => css(mul(skin, 0.5), Math.min(0.85, a * kk));
+  const lite = (a: number) => css(mul(skin, 1.15), Math.min(0.6, a * kk));
   // 一道“折”：暗线 + 下面一道亮线
   const crease = (pts: [number, number][], a: number, w = 0.55, dy = -0.0011) => {
-    g.lineWidth = Math.max(0.9, pxmm * w);
+    w *= 1.35;
+    g.lineWidth = Math.max(1.1, pxmm * w);
     g.strokeStyle = dark(a);
     path(pts);
     g.stroke();
@@ -567,22 +577,36 @@ function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, p
     g.stroke();
   };
   // 抬头纹
-  for (let i = 0; i < 3; i++) {
-    const y = 0.188 + i * 0.0085;
-    crease(qcurve([-0.034 + i * 0.002, y - 0.001], [0, y + 0.0022], [0.034 - i * 0.002, y - 0.001], 12), 0.45 - i * 0.08);
+  const nF = k > 0.65 ? 4 : 3;
+  for (let i = 0; i < nF; i++) {
+    const y = 0.186 + i * 0.0078 + (i % 2 ? 0.0006 : -0.0004);
+    // 抬头纹不是一整道、也不是尺子画的：中间断开、两边一高一低、长短不一，略带波
+    const wav = (x0: number, x1: number, y0: number, a: number) => {
+      const pts: [number, number][] = [];
+      for (let j = 0; j <= 10; j++) {
+        const t = j / 10, x = x0 + (x1 - x0) * t;
+        pts.push([x, y0 + 0.0016 * Math.sin(Math.PI * t) + 0.0005 * Math.sin(t * 9 + i * 1.7 + x0 * 90)]);
+      }
+      crease(pts, a);
+    };
+    wav(-0.032 + i * 0.003 + (i === 2 ? 0.006 : 0), -0.004 - (i === 1 ? 0.004 : 0), y, 0.42 - i * 0.06);
+    wav(0.002 + (i === 0 ? 0.004 : 0), 0.031 - i * 0.004, y + 0.0007, 0.38 - i * 0.06);
   }
   // 眉间竖纹（老头）
   if (!hp.female) for (const s of [-1, 1]) crease([[s * 0.005, 0.163], [s * 0.0058, 0.172]], 0.35, 0.45, 0);
   // 鱼尾纹
   for (const s of [-1, 1]) {
-    for (let i = -1; i <= 1; i++) crease([[s * 0.0495, 0.151 + i * 0.002], [s * 0.0565, 0.1525 + i * 0.0045]], 0.4, 0.45, 0);
-    // 眼袋下沿
-    crease(qcurve([s * 0.022, 0.141], [s * 0.034, 0.1355], [s * 0.046, 0.1405], 8), 0.38);
+    for (let i = -1; i <= 1; i++) crease([[s * 0.0495, 0.151 + i * 0.002], [s * 0.0595, 0.1525 + i * 0.0055]], 0.45, 0.45, 0);
+    // 眼袋下沿（两道）
+    crease(qcurve([s * 0.022, 0.141], [s * 0.034, 0.1355], [s * 0.046, 0.1405], 8), 0.42);
+    crease(qcurve([s * 0.024, 0.1365], [s * 0.036, 0.1305], [s * 0.048, 0.136], 8), 0.25);
     // 法令纹：鼻翼外 → 嘴角外
     // fix1：女人的法令纹、嘴角纹淡一些（原来在钠灯下读成一圈脏印/胡子影）
     crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.2 : 0.42, hp.female ? 0.5 : 0.65, 0);
     // 嘴角下的纹
-    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.1 : 0.24, 0.45, 0);
+    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.18 : 0.3, 0.45, 0);
+    // 下巴两侧往下的“木偶纹”、颈上的横纹由几何的腮肉托着；颧下一道浅沟
+    crease(qcurve([s * 0.048, 0.118], [s * 0.052, 0.105], [s * 0.05, 0.092], 6), 0.16, 0.6, 0);
   }
 }
 

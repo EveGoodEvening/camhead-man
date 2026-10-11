@@ -389,9 +389,9 @@ export function armbandTexture(): THREE.CanvasTexture {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.save();
-    // 圆柱 UV 的 u 在外侧是反着走的：水平翻转，从外面看才是正字
+    // fix3：袖箍是放样的圈（accessories.ts armband，起点在后方），左臂外侧（−x）u 朝后增大 = 从外面看往右：不翻转就是正字
+    // （原来按旧圆柱 UV 水平翻转，在新袖箍上成了镜像字）
     g.translate(w * 0.75, h * 0.53);
-    g.scale(-1, 1);
     g.fillText('值勤', 0, 0);
     g.restore();
     wear(g, w, h, 18, 0.06, 5);

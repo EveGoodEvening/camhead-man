@@ -190,15 +190,23 @@ export function trouserWeights(ctx: BuildCtx, fr: LegFrame, p: THREE.Vector3): [
   const yW = ctx.seams.WAIST.centre[1];
   if (p.y > fr.ySplit + 1e-5) {
     const sp = 0.35 * smooth01(yW - 0.05 * s, yW, p.y);
+    // fix3：臀部下半（分裆圈以上 7cm 内、靠后、靠两侧）带一点大腿：坐下抬腿时臀到大腿后面是一道圆弧，不是一道深深的折口
+    const bk = smooth01(0.0, 0.06 * s, p.z) * smooth01(0.015 * s, 0.05 * s, Math.abs(p.x)) * smooth01(fr.ySplit + 0.07 * s, fr.ySplit, p.y);
+    const wt = 0.3 * bk;
+    if (wt > 1e-4) {
+      const hipOwn = (p.x >= 0 ? 'hipR' : 'hipL') as BoneName;
+      return W([['hips', (1 - sp) * (1 - wt)], ['spine', sp * (1 - wt)], [hipOwn, wt]]);
+    }
     return W([['hips', 1 - sp], ['spine', sp]]);
   }
   const side: 'L' | 'R' = p.x >= 0 ? 'R' : 'L';
   const other: 'L' | 'R' = side === 'R' ? 'L' : 'R';
   const sym = 1 - smooth01(0, 0.03 * s, Math.abs(p.x));
-  // 大腿权重：前片在分裆圈下 ~11cm 内、后片（臀）稍快
+  // 大腿权重：前片在分裆圈下 ~11cm 内；后片（臀）上面已经带了一点大腿，这里接着它（不再更快）
   const back = smooth01(-0.02 * s, 0.05 * s, p.z);
+  const bk0 = back * smooth01(0.015 * s, 0.05 * s, Math.abs(p.x));
   const span = (0.11 - 0.03 * back) * s;
-  const th = smooth01(0, span, fr.ySplit - p.y);
+  const th = Math.max(0.3 * bk0 * smooth01(fr.ySplit - 0.025 * s, fr.ySplit, p.y), smooth01(0, span, fr.ySplit - p.y));
   // 膝：8cm 过渡；膝前的过渡中心往下移，坐下（膝 −π/2）时膝前是圆角而不是塌成 0.7 倍
   const front = smooth01(0.01 * s, -0.04 * s, p.z);
   const c = fr.kneeY - front * 0.045 * s + (1 - front) * 0.01 * s;

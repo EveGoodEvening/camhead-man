@@ -371,7 +371,9 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
       }
       if (!baseOrder.has(mesh)) baseOrder.set(mesh, mesh.renderOrder);
       // fix2：配件（袖箍、帽子、篮子……）包在身子外面：同一档里比身子晚画（身子先写深度，配件被身子挡住的那半圈画不上）
-      mesh.renderOrder = Math.max(baseOrder.get(mesh)!, order) + (extraMeshes.includes(mesh) ? 1 : 0);
+      // fix3：领子也比身子晚画：脖子先写深度，领子后半圈的里壁（从前上方看越过前沿能看到的那一截）被脖子挡住，
+      // 魂影里不再是“脖子外面套着一圈完整的透明环”（领子里那截脖子仍由 collarPrepass 挡住）
+      mesh.renderOrder = Math.max(baseOrder.get(mesh)!, order) + (extraMeshes.includes(mesh) || mesh.name === 'collar' ? 1 : 0);
     }
     if (collarPre) {
       collarPre.visible = on && opacity > 0.3;

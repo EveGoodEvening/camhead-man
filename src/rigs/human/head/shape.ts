@@ -76,6 +76,13 @@ export function headSurface(p: HeadParams): HeadSurface {
       + (child ? 0.035 * sstep(0.15, 0.2, ye) + 0.03 * bump(ye, 0.09, 0.026) - 0.11 * (1 - sstep(0.035, 0.078, ye)) : 0) + (deity ? 0.05 : 0)
       + (female ? -0.02 * (1 - sstep(0.08, 0.14, ye)) : 0);
     W *= wm;
+    // fix3：孩子的下半张脸是一条连续的圆弧（颧骨以下按椭圆收到下巴，没有两个下颌角、不是尖下巴的“盾牌脸”）
+    if (child && ye < 0.13) {
+      const Wtop = Math.sqrt(Math.max(0, W2(0.125))) * (1 + 0.045 * ck * bump(0.125, 0.095, 0.03) + 0.035 * sstep(0.15, 0.2, 0.125) + 0.03 * bump(0.125, 0.09, 0.026));
+      const e = Math.min(1, (0.125 - ye) / 0.104);
+      const Wr = Wtop * Math.sqrt(Math.max(0, 1 - e * e));
+      W += (Wr - W) * sstep(0.128, 0.1, ye);
+    }
     F += 0.0042 * S('chin') * bump(ye, 0.05, 0.013) + (deity ? 0.007 * bump(ye, 0.205, 0.022) : 0) + (child ? 0.004 * bump(ye, 0.2, 0.025) : 0)
       + 0.003 * S('foreheadH') * bump(ye, 0.2, 0.02);
     B *= 1 + (child ? 0.04 * sstep(0.13, 0.2, ye) : 0) + (deity ? 0.03 : 0);
@@ -153,7 +160,9 @@ export function headSurface(p: HeadParams): HeadSurface {
   const eyeK = 1 + 0.25 * S('eyeSize');
   const old = p.old && !deity;
   // fix2：老人的法令纹、眼袋、下垂的腮更深（头像距离、钠灯下看得出年纪）
-  const nlDepth = p.old ? (deity ? 0.0012 : 0.0021) : child ? 0 : 0.0004;
+  // fix3：老太太（圆脸、饱满）法令纹、腮肉主要靠画，几何只留一点（3–4m 外顶光下不再是一圈方方的黑“口鼻”）
+  const oldW = p.preset === 'oldWoman';
+  const nlDepth = p.old ? (deity ? 0.0012 : oldW ? 0.0008 : 0.0021) : child ? 0 : 0.0004;
   const features = (P: Readonly<V3>, n: Readonly<V3>): number => {
     const x = P[0], y = P[1], ax = Math.abs(x);
     const fr = sstep(0.15, 0.65, -n[2]);
@@ -167,15 +176,16 @@ export function headSurface(p: HeadParams): HeadSurface {
     d += 0.0009 * g2(ax - 0.034, y - 0.1438, 0.011, 0.0028) * fr;
     if (p.old) d += (deity ? 0.0011 : 0.0019) * g2(ax - 0.035, y - 0.1385, 0.012, 0.0035) * fr;
     // 老人：嘴角两边往下的“木偶纹”外侧腮肉下垂（下颌线上、下巴两侧鼓一点）
-    if (old) d += 0.0022 * g2(ax - 0.042, y - 0.066, 0.012, 0.012) * sf - 0.0009 * g2(ax - 0.03, y - 0.07, 0.004, 0.01) * fr;
+    if (old) d += (oldW ? 0.0008 : 0.0022) * g2(ax - 0.042, y - 0.066, 0.012, 0.012) * sf - (oldW ? 0.0003 : 0.0009) * g2(ax - 0.03, y - 0.07, 0.004, 0.01) * fr;
     d -= (0.0018 + (old ? 0.0012 : 0)) * g2(ax - 0.064, y - 0.168, 0.012, 0.016) * sf;
     d += Math.max(0, 0.002 * (1 + 0.6 * S('cheekbone'))) * g2(ax - 0.053, y - 0.128, 0.019, 0.018) * sf;
     // fix1：瘦脸（cheekFull < 0）的颊窝浅一半、范围大一点：钠灯下不再是一块硬边的黑三角
     const cf = S('cheekFull');
-    d += cf >= 0 ? 0.0032 * cf * g2(ax - 0.046, y - 0.098, 0.019, 0.017) * sf : 0.0016 * cf * g2(ax - 0.048, y - 0.1, 0.026, 0.024) * sf;
+    // fix3：饱满的腮是一大片缓坡（宽一点、顶点往外移），不在法令纹外侧鼓成一道硬棱（老太太、孩子的“口鼻”轮廓）
+    d += cf >= 0 ? 0.0032 * cf * (oldW || child ? 0.7 * g2(ax - 0.052, y - 0.1, 0.027, 0.024) : g2(ax - 0.046, y - 0.098, 0.019, 0.017)) * sf : 0.0016 * cf * g2(ax - 0.048, y - 0.1, 0.026, 0.024) * sf;
     if (old) d -= 0.0004 * g2(ax - 0.054, y - 0.104, 0.022, 0.022) * sf;
     // fix2：口周（上下颌的弓）和上下唇更突出，侧面看得出嘴
-    d += 0.0029 * g2(x, y - 0.088, 0.032, 0.019) * fr;
+    d += (oldW ? 0.0016 : 0.0029) * g2(x, y - 0.088, 0.032, 0.019) * fr;
     d += 0.0037 * lipK * g2(x, y - 0.0868, 0.0205, 0.0041) * fr - 0.0006 * g2(x, y - 0.0892, 0.004, 0.002) * fr;
     d += 0.0034 * lipK * g2(x, y - 0.0748, 0.0178, 0.0048) * fr;
     d -= 0.0018 * g2(x, y - 0.0808, 0.0245, 0.0017) * fr;
@@ -454,13 +464,15 @@ export function addShell(out: HeadMeshData, surf: HeadSurface, seam: SeamU): voi
   }
   // 下半张脸（正面与两颊）的着色法线往上偏一点（只改明暗、不改轮廓）：顶上来的灯（路灯、门灯）下，鼻子以下、颊下不再整片发黑像胡子
   const yb = surf.noseBase;
+  // fix3：孩子、老太太的下半张脸更“朝上”（顶光下下巴、下颌不发黑，不读成胡子/口鼻套）
+  const soft = surf.p.child || surf.p.preset === 'oldWoman';
   for (let r = 3; r < rows; r++) {
     for (let c = 0; c <= N; c++) {
       const i = at(r, c);
       const x = out.pos[i * 3]!, y = out.pos[i * 3 + 1]!, z = out.pos[i * 3 + 2]!;
       const side = sstep(0.03, -0.03, z);
-      const w = (1 - sstep(0.125, 0.16, y)) * sstep(0.028, 0.058, y) * side * sstep(-0.2, 0.5, -out.nor[i * 3 + 2]! + 0.6 * Math.abs(out.nor[i * 3]!));
-      let ny = out.nor[i * 3 + 1]! + 0.4 * w;
+      const w = (1 - sstep(0.125, 0.16, y)) * sstep(soft ? 0.02 : 0.028, soft ? 0.05 : 0.058, y) * side * sstep(-0.2, 0.5, -out.nor[i * 3 + 2]! + 0.6 * Math.abs(out.nor[i * 3]!));
+      let ny = out.nor[i * 3 + 1]! + (soft ? 0.6 : 0.4) * w;
       let nz = out.nor[i * 3 + 2]!;
       // 鼻底（鼻小柱、鼻翼下面那一圈）：朝下的法线往前扳，和上唇一样亮
       const under = Math.exp(-((x / 0.02) ** 2)) * sstep(yb - 0.008, yb - 0.002, y) * (1 - sstep(yb + 0.008, yb + 0.014, y)) * sstep(-0.05, -0.35, out.nor[i * 3 + 1]!);
@@ -535,8 +547,10 @@ const TRAGUS = new Set([10, 11]);
 function addEar(out: HeadMeshData, surf: HeadSurface, side: 1 | -1): void {
   const p = surf.p;
   const sz = (1 + 0.15 * p.sc.earSize) * (p.child ? 0.92 : 1) * (p.female ? 0.93 : 1);
-  const lobeExtra = (p.deity ? 0.0075 : 0.004) * Math.max(0, p.sc.earlobe);
-  const hK = 1 + 0.08 * p.sc.earSize;
+  // fix3：土地的福相大耳垂一直垂到下颌线（原来只多 1.9cm，藏在胡子后面看不出来），耳垂肥厚；耳廓整体离头皮更远（侧面看有厚度、有耳轮）
+  const lobeExtra = (p.deity ? 0.011 : 0.004) * Math.max(0, p.sc.earlobe);
+  const hK = (1 + 0.08 * p.sc.earSize) * (p.deity ? 1.45 : 1.1);
+  const lobeFat = p.deity ? 1.0 + 0.25 * Math.max(0, p.sc.earlobe) : 1;
   // 耳中心落在头皮上（基础头形沿 ±x 求）
   const cy = 0.135, cz = 0.006;
   const sx = solveLine(surf, [0, cy, cz], [side, 0, 0]);
@@ -548,10 +562,10 @@ function addEar(out: HeadMeshData, surf: HeadSurface, side: 1 | -1): void {
   if (ef[2] > 0) { ef[0] = -ef[0]; ef[1] = -ef[1]; ef[2] = -ef[2]; }
   const ctr: [number, number] = [0.0015, -0.002];
   const n = EAR_OUT.length;
-  const outline = EAR_OUT.map(([f, u], i) => [f * sz * 1.18, (u - (LOBE.has(i) ? lobeExtra * (i === 8 ? 1 : 0.7) : 0)) * sz] as [number, number]);
+  const outline = EAR_OUT.map(([f, u], i) => [f * sz * 1.18 * (LOBE.has(i) ? 1 + 0.12 * (lobeFat - 1) : 1), (u - (LOBE.has(i) ? lobeExtra * (i === 8 ? 1 : 0.7) : 0)) * sz] as [number, number]);
   // 环：缩放比例、相对高度（M2、M1 是背面，A 是耳轮外缘，B 耳轮顶，C 耳舟，D 对耳轮，E 耳甲）
   type Ring = { s: number; h: (i: number) => number; shift?: [number, number] };
-  const H = (i: number) => EAR_H[i]! * hK;
+  const H = (i: number) => EAR_H[i]! * hK * (LOBE.has(i) ? lobeFat : 1);
   const rings: Ring[] = [
     { s: 0.8, h: () => -0.0006 },
     { s: 0.95, h: i => H(i) * 0.55 },

@@ -85,7 +85,9 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
     // 正面看贴面比底下的衣身多一层（略实一点），是可以接受的
     const pOver = mb.piece({ name: 'torsoOverlay', slot: torsoSlot, order: 1 });
     const pOver2 = mb.piece({ name: 'torsoOverlayTop', slot: torsoSlot, order: 2 });
-    buildOverlays(mb, d, g, surf, { body: pOver, top: pOver2 }, skinAt, yBottom, yNeckFront);
+    const pFace = mb.piece({ name: 'torsoOverlayFace', slot: torsoSlot, order: -2 });
+    const pFace2 = mb.piece({ name: 'torsoOverlayFaceTop', slot: torsoSlot, order: -3 });
+    buildOverlays(mb, d, g, surf, { body: pOver, top: pOver2, bodyFace: pFace, topFace: pFace2 }, skinAt, yBottom, yNeckFront);
   }
   if (g.collar !== 'none') {
     const pCollar = mb.piece({ name: 'collar', slot: torsoSlot, own: true });

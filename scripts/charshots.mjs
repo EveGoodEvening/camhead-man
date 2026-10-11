@@ -55,6 +55,29 @@ const INSTALL = `
     g.cameras.active = 'fixed';
     await T.frames(3);
   };
+  /** fix3：机位与目标之间有墙/物件时把机位挪到挡住它的那一面前 0.25m（player_full_d 原来在墙里，整张黑） */
+  T.clearPos = (pos, target) => {
+    const V = g.cameras.camera.position.constructor;
+    const t = new V(...target), p = new V(...pos);
+    const dir = p.clone().sub(t); const len = dir.length(); dir.normalize();
+    const rc = new (g.sys.interaction.ray.constructor)(t, dir).ray;
+    const tri = [new V(), new V(), new V()], hit = new V();
+    let best = len;
+    g.areas.current.root.traverseVisible(o => {
+      if (!o.isMesh || !o.geometry || o.isSkinnedMesh || o.isInstancedMesh) return;
+      for (let q = o; q; q = q.parent) if (q.userData.char2spawn || q.name === 'm4.lineup') return;
+      const pa = o.geometry.attributes.position; if (!pa || pa.count > 60000) return;
+      o.updateMatrixWorld(true);
+      const idx = o.geometry.index; const n = idx ? idx.count : pa.count;
+      for (let i = 0; i < n; i += 3) {
+        for (let k = 0; k < 3; k++) tri[k].fromBufferAttribute(pa, idx ? idx.getX(i + k) : i + k).applyMatrix4(o.matrixWorld);
+        if (rc.intersectTriangle(tri[0], tri[1], tri[2], false, hit)) { const d = hit.distanceTo(t); if (d > 0.6 && d < best) best = d; }
+      }
+    });
+    if (best >= len) return pos;
+    const q = t.clone().addScaledVector(dir, Math.max(0.8, best - 0.25));
+    return [q.x, q.y, q.z];
+  };
   T.lineup = async (look, yaw) => {
     globalThis.__m4lineup = { look, yaw };
     const r = await window.__game.selftest('m4.lineup');
@@ -287,7 +310,11 @@ try {
       const dirs = { a: [Math.sin(yaw), Math.cos(yaw)], b: [-Math.sin(yaw), -Math.cos(yaw)], c: [Math.cos(yaw), -Math.sin(yaw)], d: [-Math.cos(yaw), Math.sin(yaw)] };
       for (const [tag, d] of Object.entries(dirs)) {
         if (wantView('full') || wantView(`full_${tag}`)) {
-          await pose([D[0] + d[0] * 2.6, 1.2, D[1] + d[1] * 2.6], [D[0], 1.0, D[1]], 42);
+          const want = [D[0] + d[0] * 2.6, 1.2, D[1] + d[1] * 2.6];
+          const cp = await ev(([p, t]) => window.__T.clearPos(p, t), [want, [D[0], 1.0, D[1]]]);
+          // 挪近了就把视角放宽，全身仍在画面里
+          const dist = Math.hypot(cp[0] - D[0], cp[2] - D[1]);
+          await pose(cp, [D[0], 1.0, D[1]], dist < 2.4 ? Math.min(75, 42 * 2.6 / Math.max(1.2, dist)) : 42);
           await shoot(`player_full_${tag}`);
         }
         if (wantView('upper') || wantView(`upper_${tag}`)) {

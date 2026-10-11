@@ -485,8 +485,9 @@ function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.Buf
     wholeRing(rectUv(R.skin), 12), { group: 5 });
   // 褶袖（喇叭口）+ 袖口折边 + 剪纸手
   for (const sx of [-1, 1]) {
-    const S = new THREE.Vector3(sx * K(0.2), K(1.165), K(0.0)), C = new THREE.Vector3(sx * K(0.268), K(0.665), K(-0.045));
-    const sl = pleatTube(mb, S, C, [0.058, 0.07, 0.084, 0.098, 0.107].map(K), 8, K(0.004), rectUv(R.sleeve), { topCap: true, lip: rectUv(R.lip) });
+    // fix3：袖子是往下张开的褶纸圆锥（11 道细褶、肩头更窄、起点往里往上挪，溜肩），不是八棱柱的方袖子
+    const S = new THREE.Vector3(sx * K(0.188), K(1.178), K(0.0)), C = new THREE.Vector3(sx * K(0.27), K(0.665), K(-0.045));
+    const sl = pleatTube(mb, S, C, [0.046, 0.062, 0.08, 0.097, 0.108].map(K), 11, K(0.0028), rectUv(R.sleeve), { topCap: true, lip: rectUv(R.lip) });
     const wrist = sl.end.clone().addScaledVector(sl.T, -K(0.012));
     paperHand(mb, wrist, new THREE.Vector3(sx * 0.06, -1, -0.12), new THREE.Vector3(sx * 0.55, 0, 1), new THREE.Vector3(-sx, 0, -0.35), k * 1.15, rectUv(R.hand), 10 + (sx > 0 ? 2 : 0));
   }
@@ -787,7 +788,8 @@ function createBoy(o: PaperOpts): PaperRig {
     sectorLoft(mb, [hem, { ...hem, y: hem.y + K(0.01), a: hem.a * 0.86, bf: hem.bf * 0.84, bb: hem.bb * 0.84 }], wholeRing(rectUv(lipR), 20),
       { group: 2, inside: y => new THREE.Vector3(0, y - K(0.05), 0) });
   }
-  collarBand(mb, K(0.745), K(0.778), K(0.07), K(0.062), K(0.062), K(0.055), 0, rectUv(collarR), 3);
+  // fix3：立领高到头壳下沿（0.79），领子和头之间不再露出一截灰纸筒脖子
+  collarBand(mb, K(0.745), K(0.793), K(0.07), K(0.062), K(0.06), K(0.053), 0, rectUv(collarR), 3);
   sectorLoft(mb, [{ y: K(0.755), a: K(0.04), bf: K(0.038), bb: K(0.04) }, { y: K(0.85), a: K(0.04), bf: K(0.038), bb: K(0.04) }], wholeRing(rectUv(hand), 10), { group: 5 });
   // 袖子：左袖垂着，右袖往前伸（提灯笼）；袖口里的剪纸手
   const sl = pleatTube(mb, new THREE.Vector3(K(-0.15), K(0.715), 0), new THREE.Vector3(K(-0.186), K(0.47), K(-0.02)), [0.044, 0.05, 0.06, 0.068].map(K), 6, K(0.003), rectUv(sleeve),

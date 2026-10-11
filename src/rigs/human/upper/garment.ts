@@ -74,11 +74,13 @@ function slab(mb: MeshBuilder, grid: { p: THREE.Vector3; n: THREE.Vector3 }[][],
     }
   }
   const t0 = mb.triCount;
-  // 顶面（每格按当地法线定绕向）
+  // 顶面（每格按当地法线定绕向）。fix3：顶面排在衣身前面画（FACE_PIECE，order −2/−3）：魂影里先写深度、底下的衣身画不上，
+  // 口袋不再是一块叠了两层、比衣服亮的“贴纸”；从背后看顶面是背面（剔除），侧壁仍排在衣身后面
+  const fp = FACE_PIECE.get(piece) ?? piece;
   for (let i = 0; i + 1 < ni; i++) for (let j = 0; j + 1 < nj; j++) {
     const n = grid[i]![j]!.n;
-    mb.tOriented(top[i]![j]!, top[i + 1]![j]!, top[i + 1]![j + 1]!, piece, n);
-    mb.tOriented(top[i]![j]!, top[i + 1]![j + 1]!, top[i]![j + 1]!, piece, n);
+    mb.tOriented(top[i]![j]!, top[i + 1]![j]!, top[i + 1]![j + 1]!, fp, n);
+    mb.tOriented(top[i]![j]!, top[i + 1]![j + 1]!, top[i]![j + 1]!, fp, n);
   }
   void t0;
   // 侧壁：沿边界一圈（顶面边 → 底面边），绕向朝外（离薄片中心）
@@ -126,13 +128,18 @@ function button(mb: MeshBuilder, c: THREE.Vector3, n: THREE.Vector3, r: number, 
   }
 }
 
-export interface OverlayPieces { body: number; top: number }
+export interface OverlayPieces { body: number; top: number; bodyFace?: number; topFace?: number }
+/** fix3：薄片顶面用的部件（墙所在部件 → 顶面部件） */
+const FACE_PIECE = new Map<number, number>();
 
 /**
  * 门襟、扣子、口袋、拉链、大襟。surf：躯干表面查询；skinAt：薄片的蒙皮（跟躯干同一点一样）；yBottom：衣服下沿；yNeckFront：领口前点。
  */
 export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<GarmentSpec>, surf: TorsoSurface, pc: OverlayPieces,
   skinAt: (p: THREE.Vector3) => Skin, yBottom: number, yNeckFront: number): void {
+  FACE_PIECE.clear();
+  if (pc.bodyFace !== undefined) FACE_PIECE.set(pc.body, pc.bodyFace);
+  if (pc.topFace !== undefined) FACE_PIECE.set(pc.top, pc.topFace);
   const s = d.s;
   const W = d.W;
   const front = (x: number, y: number) => surf.front(x, y);
@@ -181,7 +188,7 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
   const buttons: number[] = [];
   if (placket === 'buttons' || placket === 'zhongshan5') {
     const hw = (placket === 'zhongshan5' ? 0.017 : 0.015) * s;
-    const ni = Math.max(6, Math.round((yPlTop - yPlBot) / (0.02 * s)));
+    const ni = Math.max(6, Math.round((yPlTop - yPlBot) / (0.028 * s)));
     const gr = gridFront(-hw, hw, yPlBot, yPlTop, ni, 3);
     if (gr) slab(mb, gr, 0.0018 * s, pc.body, skinAt);
     const n = placket === 'zhongshan5' ? 5 : 6;
@@ -203,7 +210,7 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
   const pocket = (cx: number, yTop: number, w: number, hgt: number, flap: number, buttonOn: boolean, dense = false) => {
     if (DEBUG_POCKETS) console.warn('pocket', cx.toFixed(3), yTop.toFixed(3), w.toFixed(3), hgt.toFixed(3));
     // fix1：格子密一点（贴着弯的衣服表面走，衣身不从薄片中间顶出来成锯齿）、抬高一点
-    const body = gridFront(cx - w / 2, cx + w / 2, yTop - hgt, yTop, Math.max(6, Math.round(hgt / ((dense ? 0.011 : 0.017) * s))), Math.max(8, Math.round(w / ((dense ? 0.014 : 0.014) * s))));
+    const body = gridFront(cx - w / 2, cx + w / 2, yTop - hgt, yTop, Math.max(6, Math.round(hgt / ((dense ? 0.018 : 0.017) * s))), Math.max(8, Math.round(w / ((dense ? 0.014 : 0.014) * s))));
     if (body) slab(mb, body, 0.0026 * s, pc.body, skinAt, 0.0025 * s);
     else if (DEBUG_POCKETS) console.warn('pocket body miss', cx, yTop, w, hgt);
     // 袋盖：底边中间略尖

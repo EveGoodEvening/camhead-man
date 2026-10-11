@@ -829,76 +829,137 @@ function beard(h: HumanoidInternal): THREE.Object3D {
   const L = headLand(h);
   const k = L.scale;
   const fit = headFit(h);
-  const mouthY = L.mouth[1], chinY = Math.min(L.chin[1], fit.bottom + 0.004 * k), chinZ = Math.min(L.chin[2], fit.front(0, chinY + 0.006 * k));
-  const cz = fit.cz;
-  // 关键圈：y、半宽 a、前沿 zf、后沿 zb
-  const jawW = (y: number) => Math.max(fit.radius(y, 0), fit.radius(y, Math.PI)) || 0.06 * k;
-  // 垂下来的长度至少 0.16m（GDD）：下巴以下各圈的高度按 Lb 拉伸
+  const mouthY = L.mouth[1], nb = L.noseBaseY;
+  const chinY = Math.min(L.chin[1], fit.bottom + 0.004 * k), chinZ = Math.min(L.chin[2], fit.front(0, chinY + 0.006 * k));
+  const cx = fit.cx, cz = fit.cz;
+  const N = 32;
+  // fix3：胡子从鬓角（耳朵前面）沿两颊、下颌长下来，盖住下巴和脖子前半圈，再垂到胸前：侧面是从脸颊到胸口一整条连着的轮廓，
+  // 不再是从嘴下面挂出来的一块板（上沿那一圈横着凸出在脸上，正面看是一道白色的“搁板”）。
+  // 脸上那一段的每一圈按头网格的真实外形量（每个方位的半径 R0），有胡子的方位往外加厚度，没胡子的（脸正中、耳朵后面）收进脸里；
+  // 下巴以下是蛋形截面一路垂到胸前。
+  // 表：按 y（头部局部、÷k）插值。open = 脸正中露在外面的半角（离正前方的弧度），back = 再往后收进去的角度，th = 厚度（÷k）
+  type Row = { y: number; open: number; back: number; th: number };
+  const yS = L.earR[1] + 0.012 * k;
+  const tab: Row[] = [
+    { y: yS, open: 1.12, back: 1.3, th: -0.002 },
+    { y: L.earR[1], open: 1.05, back: 1.36, th: 0.003 },
+    { y: (L.earR[1] + nb) / 2, open: 0.94, back: 1.38, th: 0.006 },
+    { y: nb + 0.002 * k, open: 0.8, back: 1.4, th: 0.009 },
+    { y: mouthY + 0.01 * k, open: 0.56, back: 1.4, th: 0.012 },
+    { y: mouthY + 0.002 * k, open: 0.44, back: 1.4, th: 0.014 },
+    // 耳垂（土地的福相大耳垂垂到下颌线）在这一段：胡子的后沿留在耳垂前面，过了耳垂再往脖子后面包
+    { y: mouthY - 0.007 * k, open: 0.22, back: 1.45, th: 0.016 },
+  ];
+  const lerpRow = (y: number): Row => {
+    if (y >= tab[0]!.y) return tab[0]!;
+    for (let i = 0; i + 1 < tab.length; i++) {
+      const A = tab[i]!, B = tab[i + 1]!;
+      if (y <= A.y && y >= B.y) {
+        const t = (A.y - y) / (A.y - B.y);
+        const e = t * t * (3 - 2 * t);
+        return { y, open: A.open + (B.open - A.open) * e, back: A.back + (B.back - A.back) * e, th: A.th + (B.th - A.th) * e };
+      }
+    }
+    return tab[tab.length - 1]!;
+  };
+  const sm = (e0: number, e1: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const angs = Array.from({ length: N }, (_, i) => (i / N) * Math.PI * 2);
+  const contourRow = (y: number, t: number): Float32Array => {
+    const R = lerpRow(y);
+    const r0 = angs.map(a => fit.radius(y, a, 0.0025 * k, 0.07) || 0.05 * k);
+    // 圈上平滑一遍（耳朵、鼻翼的尖峰）
+    const rs = r0.map((v, i) => Math.max(v * 0.97, (r0[(i + N - 1) % N]! + 2 * v + r0[(i + 1) % N]!) / 4));
+    const out = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const a = angs[i]!;
+      const phi = angDist(a, Math.PI / 2);
+      const cover = sm(R.open, R.open + 0.3, phi) * (1 - sm(R.back - 0.22, R.back, phi));
+      const lock = 0.0022 * k * Math.min(1, t * 2.5) * Math.sin(a * 11 + t * 6) * cover;
+      const frontK = 1 + 0.35 * Math.max(0, Math.cos(phi)) * sm(mouthY, chinY, y);
+      const rr = rs[i]!;
+      const r = (rr * 0.82) + (rr + R.th * k * frontK + lock - rr * 0.82) * cover;
+      out[i * 3] = cx + Math.cos(a) * r;
+      out[i * 3 + 1] = y;
+      out[i * 3 + 2] = cz - Math.sin(a) * r;
+    }
+    return out;
+  };
+  const rows: Float32Array[] = [];
+  const vs: number[] = [];
+  const y0 = tab[tab.length - 1]!.y;
+  const nUp = 11;
+  for (let j = 0; j <= nUp; j++) {
+    const e = j / nUp;
+    const y = yS + (y0 - yS) * (e * 0.85 + 0.15 * e * e);
+    rows.push(contourRow(y, e * 0.35));
+    vs.push(e * 0.3);
+  }
+  // 下巴以下：蛋形截面，往下垂到胸前（下巴往下 ≥ 0.16m，GDD）
   const Lb = Math.max(1, 0.18 / (0.186 * k));
   const hy = (d: number) => chinY - d * k * Lb;
-  // fix1：下巴以下的胡子贴着胸口垂下来（后沿 = 胸口表面前 5mm，往下越来越薄），宽而软的一大绺，不再往前下方戳成鸟嘴
   const neckY = h.joints.neck.position.y + h.joints.headSlot.position.y;
   const chestZ = (yh: number): number => {
     const ys = yh + neckY;
     if (ys < 0.05 * h.s) return chinZ + 0.06 * k;
     return torsoSurface(h, 0.25, ys).p.z - 0.005 * h.s;
   };
-  // fix2：胡子是一大团包住下巴和脖子前半圈的须（后沿退到脖子中线，侧面看不到胡子后面露着一截光脖子；下巴底下也不再露出
-  // 一块朝下的黑面），上沿从嘴角两边沿着下颌长出来（上两圈在脸里面，不露开口）
+  // 下巴底下头两圈的后沿退到脖子后半（侧面看脖子藏在胡子里），再往下贴着胸口
   const hang = (d: number, w: number, thick: number): [number, number, number, number] => {
     const y = hy(d);
-    // 下巴下面两圈：后沿退到脖子后半（侧面把脖子藏在胡子里）；再往下贴着胸口
-    const zb = d < 0.07 ? cz + 0.03 * k : Math.min(cz + 0.03 * k, chestZ(y));
-    const zfWant = chinZ - 0.02 * k + 0.028 * k * (d / 0.186);
+    const zb = d < 0.075 ? cz + 0.04 * k : Math.min(cz + 0.04 * k, chestZ(y));
+    const zfWant = chinZ - 0.022 * k + 0.03 * k * (d / 0.186);
     return [y, w * k, Math.min(zfWant, zb - thick * k), zb];
   };
+  // 下唇以下：蛋形截面（前沿在下巴前面、后沿在下颌里面），往下接着垂下来的那一大绺——下巴、下颌底、脖子前半圈都包在里面
+  const jawAt = (y: number) => (fit.radius(y, 0, 0.004 * k, 0.12) || 0.06 * k);
+  const yE0 = y0 - 0.01 * k, yE1 = chinY + 0.004 * k;
   const keys: [number, number, number, number][] = [
-    // 顶圈整个在脸里面（下面封口），往下一圈才从脸上长出来：没有开口、没有翘起来的边
-    [mouthY + 0.004 * k, jawW(mouthY) * 0.88, fit.front(0, mouthY) + 0.003 * k, cz + 0.02 * k],
-    [mouthY - 0.005 * k, jawW(mouthY - 0.005 * k) * 0.99, fit.front(0, mouthY - 0.007 * k) - 0.005 * k, cz + 0.02 * k],
-    [mouthY - 0.017 * k, jawW(mouthY - 0.017 * k) * 1.05, fit.front(0, mouthY - 0.019 * k) - 0.013 * k, cz + 0.02 * k],
-    [chinY + 0.006 * k, jawW(chinY + 0.012 * k) * 1.08, chinZ - 0.019 * k, cz + 0.018 * k],
-    hang(0.026, 0.072, 0.03),
-    hang(0.06, 0.07, 0.026),
-    hang(0.1, 0.061, 0.022),
-    hang(0.138, 0.047, 0.018),
-    hang(0.168, 0.03, 0.014),
+    // 头一圈的后沿退到下颌角后面（在头里，看不见），最宽处正好接上两腮那一圈胡子，侧面不往里缩出一道朝下的台阶
+    [yE0, jawAt(yE0) + 0.019 * k, fit.front(0, yE0) - 0.014 * k, cz + 0.055 * k],
+    [yE1, jawAt(yE1 + 0.008 * k) + 0.02 * k, chinZ - 0.02 * k, cz + 0.048 * k],
+    hang(0.022, Math.min(0.08, jawAt(yE1 + 0.008 * k) / k + 0.012), 0.032),
+    hang(0.055, 0.075, 0.028),
+    hang(0.095, 0.064, 0.023),
+    hang(0.135, 0.049, 0.018),
+    hang(0.166, 0.031, 0.014),
     hang(0.186, 0.012, 0.01),
   ];
-  // 下颌以下的圈不比上一圈宽（原来下巴下面一圈比下巴宽，横着一道朝上的台阶，侧面看是一块黑板）
-  for (let i = 3; i < keys.length; i++) keys[i]![1] = Math.min(keys[i]![1], keys[i - 1]![1] * (i === 3 ? 1.02 : 0.995));
-  // 关键圈之间插值（Catmull-Rom 过每个关键圈）
-  const N = 28, sub = 3;
-  const rows: Float32Array[] = [];
-  const vs: number[] = [];
+  for (let i = 3; i < keys.length; i++) keys[i]![1] = Math.min(keys[i]![1], keys[i - 1]![1] * 0.995);
   const cr = (a: number, b: number, c: number, d: number, t: number) => 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
-  const K = keys.length;
+  const K = keys.length, sub = 3;
   for (let j = 0; j < K - 1; j++) {
     for (let q = 0; q < sub; q++) {
       const t = q / sub;
       const A = keys[Math.max(0, j - 1)]!, B = keys[j]!, C = keys[j + 1]!, Dk = keys[Math.min(K - 1, j + 2)]!;
       const row = [0, 1, 2, 3].map(c => cr(A[c]!, B[c]!, C[c]!, Dk[c]!, t)) as [number, number, number, number];
-      rows.push(beardRing(row, N, (j + t) / (K - 1), k));
-      vs.push((j + t) / (K - 1));
+      const tt = (j + t) / (K - 1);
+      rows.push(beardRing(row, N, 0.35 + 0.65 * tt, k));
+      vs.push(0.3 + 0.7 * tt);
     }
   }
   rows.push(beardRing(keys[K - 1]!, N, 1, k));
   vs.push(1);
   const last = keys[K - 1]!;
-  const first = keys[0]!;
-  const mainGeo = loftRings(rows, { v: vs.map(v => 1 - v), capStart: [0, first[0] + 0.002 * k, (first[2] + first[3]) / 2], capEnd: [0, last[0] - 0.003 * k, (last[2] + last[3]) / 2] });
-  // 八字须：鼻底两边往外、往下耷拉过嘴角，扁的、往尖收
+  const mainGeo = loftRings(rows, { v: vs.map(v => 1 - v), capEnd: [cx, last[0] - 0.003 * k, (last[2] + last[3]) / 2] });
+  // 八字须：从鼻子底下贴着上唇往两边长，绕过嘴角往下，尾巴并进两颊的胡子里（扁扁的一绺，不是戳出来的一根棍）
   const parts: THREE.BufferGeometry[] = [mainGeo];
-  const nb = L.noseBaseY;
   for (const sx of [-1, 1]) {
+    const on = (x: number, y: number, out: number) => V(sx * x * k, y, fit.front(x * k * sx, y, 0.004 * k) - out * k);
     const pts = [
-      V(sx * 0.003 * k, nb - 0.004 * k, fit.front(0.003 * k, nb - 0.004 * k) - 0.003 * k),
-      V(sx * 0.016 * k, mouthY + 0.01 * k, fit.front(0.016 * k, mouthY + 0.01 * k) - 0.0045 * k),
-      V(sx * 0.031 * k, mouthY + 0.001 * k, fit.front(0.031 * k, mouthY) - 0.004 * k),
-      V(sx * 0.042 * k, mouthY - 0.016 * k, fit.front(0.04 * k, mouthY - 0.014 * k) - 0.006 * k),
-      V(sx * 0.047 * k, mouthY - 0.042 * k, fit.front(0.044 * k, mouthY - 0.03 * k) - 0.012 * k),
+      on(0.002, nb - 0.003 * k, 0.001),
+      on(0.012, nb - 0.007 * k, 0.003),
+      on(0.024, mouthY + 0.004 * k, 0.0035),
+      on(0.033, mouthY - 0.006 * k, 0.003),
+      on(0.039, mouthY - 0.02 * k, 0.001),
+      on(0.042, mouthY - 0.034 * k, -0.004),
     ];
-    const m = tube(pts, t => [0.009 * k * (1 - 0.7 * t) + 0.0015 * k, 0.005 * k * (1 - 0.6 * t) + 0.001 * k], { seg: 16, radial: 8, caps: true, up: () => V(0, 0, -1), vRange: [1, 0.55] });
+    const m = tube(pts, t => [(0.0045 * (1 - 0.45 * t) + 0.0012) * k, (0.0085 * (1 - 0.5 * t) + 0.002) * k], {
+      seg: 16, radial: 8, caps: true, up: () => V(0, 0, -1), vRange: [0.95, 0.6],
+      shape: (ang) => 1 + 0.12 * Math.sin(ang * 5),
+    });
     parts.push(m);
   }
   const geo = mergeParts(parts);
@@ -1021,9 +1082,13 @@ function hardHat(h: HumanoidInternal): THREE.Group {
       const ang = (i / N) * Math.PI * 2;
       const c = Math.cos(ang);
       // 正中一道宽棱（平顶、两边陡）+ 两侧各一道细棱
-      const mid = 0.0092 * (1 - THREE.MathUtils.smoothstep(Math.abs(c), 0.07, 0.13));
+      // fix3：正中棱按实际宽度（|x| < 1cm，约 2cm 宽）而不是按角度：越往帽顶圈越小，整圈都落在棱上，棱顶就是帽顶（不再两壁收成一道 V 口）
+      const xl = Math.abs(ring[i * 3]! - fit.cx);
+      const mid = 0.0092 * (1 - THREE.MathUtils.smoothstep(xl, 0.0085 * k, 0.0135 * k));
       const sideRib = 0.0042 * Math.exp(-(((Math.abs(c) - 0.4) / 0.055) ** 2));
-      const ridge = (mid + sideRib) * k * on;
+      // fix3：正中的棱一直跨过帽顶（原来到顶上收没了，顶上中间凹下去一道 V 口），侧棱照旧在顶上收掉
+      const onMid = THREE.MathUtils.smoothstep(phi, 0.08, 0.4);
+      const ridge = (mid * onMid + sideRib * on) * k;
       ring[i * 3] = ring[i * 3]! + Math.cos(ang) * ridge * Math.cos(phi);
       ring[i * 3 + 1] = ring[i * 3 + 1]! + ridge * Math.sin(phi);
       ring[i * 3 + 2] = ring[i * 3 + 2]! - Math.sin(ang) * ridge * Math.cos(phi);

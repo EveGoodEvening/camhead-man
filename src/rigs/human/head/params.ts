@@ -17,8 +17,9 @@ export const PRESET_SCULPT: Readonly<Record<HeadPreset, Partial<Record<SculptKey
   oldMan: { faceLen: 0.45, cheekFull: -0.4, browRidge: 0.6, earSize: 0.35, earlobe: 0.45, noseLen: 0.3, noseBridge: 0.35, lipFull: -0.45, jawW: 0.3 },
   oldWoman: { jawW: 0.15, chin: -0.45, cheekFull: 1.0, lipFull: -0.6, noseLen: -0.25, noseBridge: -0.3, browRidge: -0.9, earlobe: 0.35, faceLen: -0.45, cheekbone: -0.2 },
   // fix1：孩子圆脸（下颌不收、腮帮鼓、脸短、下巴小）
-  boy: { chin: -0.6, jawW: 0.05, cheekFull: 1.5, browRidge: -1, noseLen: -0.45, noseBridge: -0.8, eyeSize: 0.6, lipFull: 0.1, earSize: -0.1, faceLen: -0.6 },
-  girl: { chin: -0.65, jawW: -0.1, cheekFull: 1.5, browRidge: -1.2, noseLen: -0.55, noseBridge: -0.9, eyeSize: 0.7, lipFull: 0.3, earSize: -0.25, faceLen: -0.6 },
+  // fix3：下巴不往后缩（chin −0.6 → −0.2）：下半张脸饱满，顶光下不在下颌线下面压出一道黑带
+  boy: { chin: -0.2, jawW: 0.05, cheekFull: 1.5, browRidge: -1, noseLen: -0.45, noseBridge: -0.8, eyeSize: 0.6, lipFull: 0.1, earSize: -0.1, faceLen: -0.6 },
+  girl: { chin: -0.25, jawW: 0, cheekFull: 1.5, browRidge: -1.2, noseLen: -0.55, noseBridge: -0.9, eyeSize: 0.7, lipFull: 0.3, earSize: -0.25, faceLen: -0.6 },
   deity: { cheekFull: 1.3, chin: -0.35, jawW: 0.45, earlobe: 1.6, earSize: 0.45, browRidge: 0.25, noseW: 0.35, foreheadH: 0.6, lipFull: 0.1 },
 };
 

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { boneIndex } from '../profile';
 import { smooth01 } from '../shared';
 import type { BodyProfile, BuildCtx, GarmentSpec } from '../types';
-import { neckBasePoint, torsoPoint, torsoV, vHalfAt, yokePoint, type UpperDims } from './dims';
+import { neckBasePoint, section, torsoPoint, torsoV, vHalfAt, yokePoint, type UpperDims } from './dims';
 import { MeshBuilder, gauss, type Skin } from './mesh';
 
 /** 躯干的列数（圈上的点数）。袖窿占每侧 2K 列、M 行：袖窿边圈 = 2·(2K) + 2·M = 24 个点（胳膊的圈也是 24 个点）。 */
@@ -111,10 +111,62 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     return r;
   };
 
+  // fix3：没塞进裤腰的上衣（中山装、棉袄、布衫）从胸口往下是一整片连续垂下来的布：先按“自然躯干（腰以上）/ 裤子外包 + 1cm（腰以下）”
+  // 取每个高度要的半宽、前深、后深，再只往外地抹平（凹进去的腰被布绷平，不再是腰上一道横棱、下面撑出一圈“裙撑”），
+  // 腰以上的身体行与腰以下的下摆圈都按这条外形缩放。女式布衫只抹一半（留一点腰身）。WAIST 接缝圈留作下摆里面一圈朝下的衬里，与裤腰对缝。
+  const Wc = ctx.seams.WAIST.centre;
+  let hang: null | { A: (y: number) => number; F: (y: number) => number; Bk: (y: number) => number; natA: (y: number) => number; natF: (y: number) => number; natB: (y: number) => number; yTop: number } = null;
+  if (hemDrop > 0) {
+    const env = pantsEnvelope(ctx, d);
+    const clear = 0.01 * s + d.pad;
+    const yHem = d.yW - hemDrop;
+    const yTopP = d.yW + 0.6 * (d.ySt - d.yW);
+    const n = 90;
+    const ys: number[] = [], nat: number[][] = [[], [], []], req: number[][] = [[], [], []];
+    const sec = { a: 0, bf: 0, bb: 0, n: 3, zc: 0 };
+    for (let i = 0; i <= n; i++) {
+      const y = yHem + ((yTopP - yHem) * i) / n;
+      ys.push(y);
+      if (y >= d.yW) {
+        section(d, p, (y - d.yW) / (d.ySt - d.yW), sec);
+        nat[0]!.push(sec.a); nat[1]!.push(sec.bf - sec.zc + Wc[2]); nat[2]!.push(sec.zc + sec.bb - Wc[2]);
+        req[0]!.push(0); req[1]!.push(0); req[2]!.push(0);
+      } else {
+        nat[0]!.push(d.aW); nat[1]!.push(d.bWf); nat[2]!.push(d.bWb);
+        const e = env(y);
+        req[0]!.push(e.a + clear); req[1]!.push(e.bf + clear); req[2]!.push(e.bb + clear);
+      }
+    }
+    const fill = g.top === 'blouse' || d.female ? 0.5 : 1;
+    const prof = [0, 1, 2].map(c => {
+      const base = ys.map((_, i) => Math.max(nat[c]![i]!, req[c]![i]!));
+      const P2 = base.slice();
+      // 只往外抹平（趋向上凸包：胸口到臀之间一条直线）
+      for (let it = 0; it < 400; it++) for (let i = 1; i < n; i++) P2[i] = Math.max(P2[i]!, 0.5 * (P2[i - 1]! + P2[i + 1]!));
+      // 再顺一遍（没有折角）
+      const P3 = P2.slice();
+      for (let it = 0; it < 6; it++) for (let i = 1; i < n; i++) P3[i] = Math.max(base[i]!, (P3[i - 1]! + 2 * P3[i]! + P3[i + 1]!) / 4);
+      return base.map((b, i) => b + (P3[i]! - b) * fill);
+    });
+    const at = (arr: number[], y: number) => {
+      const f = Math.min(n, Math.max(0, ((y - yHem) / (yTopP - yHem)) * n));
+      const i = Math.min(n - 1, Math.floor(f)), t = f - i;
+      return arr[i]! + (arr[i + 1]! - arr[i]!) * t;
+    };
+    hang = {
+      A: y => at(prof[0]!, y), F: y => at(prof[1]!, y), Bk: y => at(prof[2]!, y),
+      natA: y => at(nat[0]!, y), natF: y => at(nat[1]!, y), natB: y => at(nat[2]!, y), yTop: yTopP,
+    };
+  }
   const P: THREE.Vector3[][] = [];
   const tmp = new THREE.Vector3();
   const bodyPoint = (t: number, h: number, extra: number, out: THREE.Vector3) => {
     torsoPoint(d, p, t, h, out);
+    if (hang && out.y < hang.yTop) {
+      out.x *= hang.A(out.y) / hang.natA(out.y);
+      const dz = out.z - Wc[2];
+      out.z = Wc[2] + dz * (dz < 0 ? hang.F(out.y) / hang.natF(out.y) : hang.Bk(out.y) / hang.natB(out.y));
+    }
     const r = extra + warp(t, h);
     if (r) {
       // 水平外法线近似：(x, z - zc) 方向
@@ -209,39 +261,22 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
   // 下摆（没塞进裤腰）：WAIST 往下外撇，最后一道 1cm 的折边，边口往里收一点（敞口，看得见里面的裤子）
   let lowRing: number[] | null = null;
   const W24 = Array.from({ length: W.count }, (_, i) => new THREE.Vector3(W.pos[i * 3]!, W.pos[i * 3 + 1]!, W.pos[i * 3 + 2]!));
-  const wq = W.count / 4;
   if (hemDrop > 0) {
-    // fix1：下摆贴着胯（裤子臀围 + 0.8–1.1cm），不再离身体 1.5–2cm 地撇出来像一圈裙撑
-    const hipA = Math.max(d.aW * 1.04, 0.17 * d.W * p.hipW + 0.009 * s) + d.pad;
-    const hipBf = Math.max(d.bWf, 0.108 * d.D) + 0.008 * s + d.pad;
-    const hipBb = Math.max(d.bWb, (d.female ? 0.125 : 0.115) * d.D) + 0.011 * s + d.pad;
-    // 下摆短（离腰不到 11cm）时只张到当地的胯宽（不到最宽的臀围）：新娘小袄的下摆不再是一圈平伸出去的边
-    const hipK = Math.pow(Math.min(1, hemDrop / (0.11 * s)), 0.8);
-    // fix2：下摆每一圈都要比同高度的裤子（骨盆段，臀部最鼓处在腰下 ~10cm，正好在长下摆的中段）大出一截，
-    // 否则长下摆（中山装 16cm）的中段压进臀部，背后一片 z-fighting 的黑斑。与 lower/trousers.ts pelvisRing 同式。
-    const env = pantsEnvelope(ctx, d);
-    const clear = 0.01 * s + d.pad;
+    const H = hang!;
     const skirtRing = (yy: number, k: number, lip: number): THREE.Vector3[] => W24.map((w, i) => {
       const t = (i / W.count) * Math.PI * 2;
-      const c = Math.cos(t), sn = -Math.sin(t);
-      const ax = Math.abs(w.x - W.centre[0]) || 1e-6;
-      const az = Math.abs(w.z - W.centre[2]) || 1e-6;
-      const wa = Math.abs(c) > 1e-6 ? ax / Math.pow(Math.abs(c), 2 / 3) : d.aW;
-      void wa;
-      const kk = k * hipK;
-      const e = env(yy);
-      const fx = Math.max((d.aW + (hipA - d.aW) * kk) / d.aW, (e.a + clear) / d.aW);
-      // sn = -sin t：sn < 0 是前片（t ≈ π/2，z < 0）。fix2：原来前后弄反了（后片只撇到前片的尺寸，压进臀部）
-      const fz = sn > 0
-        ? Math.max((d.bWb + (hipBb - d.bWb) * kk) / d.bWb, (e.bb + clear) / d.bWb)
-        : Math.max((d.bWf + (hipBf - d.bWf) * kk) / d.bWf, (e.bf + clear) / d.bWf);
+      const sn = -Math.sin(t);
+      // 下摆往下略外撇一点（k：0 腰 → 1 下摆）
+      const flare = 1 + 0.025 * k;
+      const fx = (H.A(yy) / d.aW) * flare;
+      // sn = -sin t：sn < 0 是前片（t ≈ π/2，z < 0）
+      const fz = (sn > 0 ? H.Bk(yy) / d.bWb : H.F(yy) / d.bWf) * flare;
       const out = new THREE.Vector3(W.centre[0] + (w.x - W.centre[0]) * fx, yy, W.centre[2] + (w.z - W.centre[2]) * fz);
       // 衣襟下摆的几道垂褶（很浅）
       const fold = 0.0025 * s * k * Math.sin(7 * t + 1.3);
       const l = Math.hypot(out.x, out.z - W.centre[2]) || 1;
       out.x += (out.x / l) * (fold - lip);
       out.z += ((out.z - W.centre[2]) / l) * (fold - lip);
-      void ax; void az; void wq;
       return out;
     });
     const legW = (q: THREE.Vector3): Skin => {
@@ -253,9 +288,10 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     };
     const yHem = d.yW - hemDrop;
     // 下沿略往里收（布垂下来，不往外翘），折边是圆的
-    const ks = [0.9, 0.93, 0.95, 0.66, 0.24];
-    const ys = [yHem + 0.005 * s, yHem, yHem + 0.01 * s, yHem + hemDrop * 0.45, yHem + hemDrop * 0.82];
-    const lips = [0.003 * s, -0.0008 * s, -0.0012 * s, 0, 0];
+    // fix3：外形已经是一条顺的垂线，下摆中间一圈就够（三角形预算）
+    const ks = [0.9, 0.93, 0.95, 0.5];
+    const ys = [yHem + 0.005 * s, yHem, yHem + 0.01 * s, yHem + hemDrop * 0.55];
+    const lips = [0.003 * s, -0.0008 * s, -0.0012 * s, 0];
     const rings: number[][] = [];
     for (let k = 0; k < ys.length; k++) {
       const pts = skirtRing(ys[k]!, ks[k]!, lips[k]!);
@@ -267,7 +303,10 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       if (k === 1) continue; // 复制圈之间不连
       mb.strip(rings[k]!, rings[k + 1]!, pc.torso);
     }
-    lowRing = rings[rings.length - 1]!;
+    // 腰线高度上的一圈（不再是 WAIST 接缝本身）：往上接身体第一行
+    const jw = mb.ring(skirtRing(d.yW, 0, 0), vrow(d.yW), () => W.skin.bones.map((b, k) => [b, W.skin.weights[k]!] as const));
+    mb.strip(rings[rings.length - 1]!, jw, pc.torso);
+    lowRing = jw;
   }
   // WAIST 接缝圈（24 点）：位置、蒙皮正是接缝的
   const wRing = mb.ring(W24, vrow(d.yW), () => W.skin.bones.map((b, k) => [b, W.skin.weights[k]!] as const));
@@ -275,11 +314,10 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     const k = i % W.count;
     seamNormals.push([vi, new THREE.Vector3(W.nor[k * 3]!, W.nor[k * 3 + 1]!, W.nor[k * 3 + 2]!)]);
   });
-  if (lowRing) mb.strip(lowRing, wRing, pc.torso);
 
   // 身体各行（40 列）
   for (let r = 0; r < P.length; r++) rowsIdx.push(mb.ring(P[r]!, vrow(P[r]![0]!.y), q => torsoSkin(q, 0), u));
-  mb.zip(wRing, rowsIdx[0]!, pc.torso);
+  mb.zip(lowRing ?? wRing, rowsIdx[0]!, pc.torso);
   for (let r = 0; r + 1 < rowsIdx.length; r++) {
     const inHole = r >= ra && r < rs;
     mb.strip(rowsIdx[r]!, rowsIdx[r + 1]!, pc.torso, inHole ? (i => i >= N - K || i < K || (i >= N / 2 - K && i < N / 2 + K)) : undefined);
@@ -379,6 +417,17 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
   }
   // 绕向：按到躯干中轴（x = 0，z = 当地中心）的方向定
   mb.orient(firstTri, mb.triCount, q => new THREE.Vector3(0, q.y, q.y > d.yC - 0.02 * s ? d.nbC.z : 0));
+  // fix3：下摆里的衬里：WAIST 接缝圈（裤腰）→ 腰线高度的上衣圈，一圈朝下的窄环，排在索引最后（魂影里被外面的衣身挡住）
+  if (lowRing) {
+    const down = new THREE.Vector3(0, -1, 0);
+    // 衣身那一圈复制一份（衬里的法线朝下，不和衣身的法线平均）
+    const jd = mb.dupRing(lowRing);
+    for (let i = 0; i < W.count; i++) {
+      const a = wRing[i]!, b = wRing[i + 1]!, c = jd[i]!, e = jd[i + 1]!;
+      mb.tOriented(a, b, e, pc.torso, down);
+      mb.tOriented(a, e, c, pc.torso, down);
+    }
+  }
 
   return {
     loop: { pos: loopPos, tan: loopTan, edge: loopEdge, skin: loopSkin, u: loopIdx.map(([, c]) => c / N) },

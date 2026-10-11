@@ -60,7 +60,7 @@ export function weaselHead(ctx: BuildCtx): { parts: RigidPart[]; extras: ExtraOb
   const pos = [0, HEAD_ORIGIN[1] * k, HEAD_ORIGIN[2] * k] as [number, number, number];
   const parts: RigidPart[] = [{ kind: 'rigid', name: 'head', joint: 'headSlot', geo, slot: weaselMaterial(), position: pos }];
   const wp = whiskerPositions().map((v, i) => (v - (i % 3 === 1 ? HEAD_ORIGIN[1] : i % 3 === 2 ? HEAD_ORIGIN[2] : 0)) * k);
-  const whiskers = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)), new THREE.LineBasicMaterial({ color: '#E8E0D0', transparent: true, opacity: 0.8 }));
+  const whiskers = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)), new THREE.LineBasicMaterial({ color: '#8E897F', transparent: true, opacity: 0.42 }));
   whiskers.name = 'whiskers';
   whiskers.position.set(pos[0], pos[1], pos[2]);
   whiskers.raycast = () => {};

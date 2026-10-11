@@ -118,9 +118,10 @@ export function createMotion(ctx: MotionCtx): Motion {
   // fix1：弯在上背（几何里的驼峰）多、髋上那一折少：脊柱转得少一点，头靠颈往前探
   // fix2：重度驼背（王奶奶 0.35）不再是腰上一折：腰上弯得少、上背的驼峰在几何里，颈往前探（头在胸前），头再抬回来脸朝前略低；膝弯得多一点
   const strong = THREE.MathUtils.smoothstep(ky, 0.26, 0.34);
-  const hunchSpine = -1.05 * ky * (1 - 0.25 * strong);
-  const hunchNeck = 0.64 * ky * (1 - strong) - 0.8 * ky * strong;
-  const hunchHead = 0.95 * ky * strong;
+  // fix3：重度驼背的弯更多放在上背（几何驼峰更大，dims.ts），腰上那一折再少一点；颈多往前探一点补回头的位置
+  const hunchSpine = -1.05 * ky * (1 - 0.4 * strong);
+  const hunchNeck = 0.64 * ky * (1 - strong) - 0.98 * ky * strong;
+  const hunchHead = 1.12 * ky * strong;
   const hunchShoulder = 0.12 * ky * (1 + 0.6 * strong);
   const oldKnee = old || ky >= 0.15 ? 0.08 * Math.min(1, kyN) + 0.16 * strong : 0;
   const strideK = (ky > 0.1 || old ? 0.85 : 1) * (child ? 0.9 : 1);

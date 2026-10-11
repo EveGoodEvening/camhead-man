@@ -75,7 +75,8 @@ export function fabricTexture(part: 'shirt' | 'sleeve' | 'pants'): THREE.CanvasT
     gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr;
     g.fillRect(x - 5, 0, 10, W);
-    stitchLine(g, [[Math.min(W - 0.5, Math.max(0.5, x)), 0], [Math.min(W - 0.5, Math.max(0.5, x)), W]], '#8a8a8a', { alpha: 0.45, dash: 3 });
+    // fix3：裤子的缝线淡一点（坐下弯腰时侧缝转到背后，读成腰后一排黑点）
+    stitchLine(g, [[Math.min(W - 0.5, Math.max(0.5, x)), 0], [Math.min(W - 0.5, Math.max(0.5, x)), W]], '#8a8a8a', { alpha: part === 'pants' ? 0.22 : 0.45, dash: 3 });
   }
   const tex = canvasToTexture(canvas);
   tex.name = `fabric.${part}`;
@@ -150,10 +151,18 @@ export function modeDetail(m: 'ghost' | 'replay', o: ModeDetailIn): GhostDetail 
   const map = o.src?.map ?? null;
   const tune = m === 'ghost' ? o.style?.ghost : undefined;
   const T = MODE_TUNE[m];
+  // fix3：魂影里脸的亮度跟着肤色走（贴图亮度 × 底色）：肤色深的人（老周 #A07E66）3m 外的脸成了帽檐下一团黑。
+  // 脸的底色按亮度归一到常见肤色（#C9A080 ≈ 0.4）以上，五官的明暗对比不变
+  let base: THREE.ColorRepresentation = o.src?.color ?? 0xffffff;
+  if (m === 'ghost' && o.face && o.src?.color) {
+    const c = o.src.color;
+    const lum = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+    if (lum > 1e-3 && lum < 0.38) base = c.clone().multiplyScalar(Math.min(1.7, 0.38 / lum));
+  }
   return {
     map,
     mapAmt: map ? (o.face ? T.faceMap : T.bodyMap) : 0,
-    base: o.src?.color ?? 0xffffff,
+    base,
     baseAmt: tune?.baseAmt ?? (o.face ? T.faceBase : T.bodyBase),
     solid: o.solidOverride ?? (o.accessory ? 1 : o.face ? T.faceSolid : T.bodySolid),
     rim: T.rim,

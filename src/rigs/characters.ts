@@ -211,18 +211,39 @@ function skinOntoBody(h: HumanoidInternal, m: THREE.Mesh, joint: 'shoulderL' | '
   const P = geo.attributes.position as THREE.BufferAttribute;
   const si = new Uint16Array(P.count * 4), sw = new Float32Array(P.count * 4);
   const v = new THREE.Vector3(), q = new THREE.Vector3();
+  // fix3：袖箍只抄袖子（不抄腋下的衣身：圈的内侧离衣身更近，抄了衣身的权重，趴桌抬肩时那半圈留在原地，整圈翘离袖子），
+  // 而且是最近 6 个点按距离加权平均（袖子的三角肌那一段是 spine/肩混合权重，逐点抄最近一个会让圈变形不匀）
+  const pool = joint === 'spine' ? src : src.filter(m => m.name === 'sleeves').concat(src.filter(m => m.name !== 'sleeves')).slice(0, 1);
+  const KN = joint === 'spine' ? 1 : 6;
   for (let i = 0; i < P.count; i++) {
     v.fromBufferAttribute(P, i);
-    let best = Infinity, bm: THREE.SkinnedMesh | null = null, bi = -1;
-    for (const sm of src) {
+    const near: { d: number; m: THREE.SkinnedMesh; j: number }[] = [];
+    for (const sm of pool) {
       const sp = sm.geometry.attributes.position as THREE.BufferAttribute;
       for (let j = 0; j < sp.count; j++) {
         const d = q.fromBufferAttribute(sp, j).distanceToSquared(v);
-        if (d < best) { best = d; bm = sm; bi = j; }
+        if (near.length < KN || d < near[near.length - 1]!.d) {
+          near.push({ d, m: sm, j });
+          near.sort((a, b) => a.d - b.d);
+          if (near.length > KN) near.pop();
+        }
       }
     }
-    const SI = bm!.geometry.attributes.skinIndex as THREE.BufferAttribute, SW = bm!.geometry.attributes.skinWeight as THREE.BufferAttribute;
-    for (let c = 0; c < 4; c++) { si[i * 4 + c] = SI.getComponent(bi, c); sw[i * 4 + c] = SW.getComponent(bi, c); }
+    const acc = new Map<number, number>();
+    let wsum = 0;
+    for (const nb of near) {
+      const w = 1 / (Math.sqrt(nb.d) + 0.002);
+      wsum += w;
+      const SI = nb.m.geometry.attributes.skinIndex as THREE.BufferAttribute, SW = nb.m.geometry.attributes.skinWeight as THREE.BufferAttribute;
+      for (let c = 0; c < 4; c++) {
+        const wt = SW.getComponent(nb.j, c);
+        if (wt > 0) acc.set(SI.getComponent(nb.j, c), (acc.get(SI.getComponent(nb.j, c)) ?? 0) + wt * w);
+      }
+    }
+    const top = [...acc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const tsum = top.reduce((a, [, w]) => a + w, 0) || 1;
+    void wsum;
+    for (let c = 0; c < 4; c++) { si[i * 4 + c] = top[c]?.[0] ?? 0; sw[i * 4 + c] = (top[c]?.[1] ?? 0) / tsum; }
   }
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
@@ -251,7 +272,7 @@ function buildWang(o: CharacterOpts): Built {
     ? { skin: '#C9A080', hair: '#1c1816', hairStyle: 'bun', age: 'young', female: true, seed: 7, head: 'woman', sculpt: { cheekFull: 0.6, jawW: 0.45, faceLen: -0.15, noseW: 0.3, noseLen: -0.1, eyeSize: -0.3, browRidge: -0.4, cheekbone: 0.35, chin: -0.1 }, paint: { blush: 0.3, eyeShape: 'single', brow: 'straight', lips: '#A44A44' } }
     : {
       skin: '#C9A080', hair: '#8D8A86', hairStyle: 'bun', age: 'old', female: true, seed: 7, head: 'oldWoman',
-      sculpt: { cheekFull: 0.5, chin: -0.35, lipFull: -0.6, jawW: 0.2, noseW: 0.25 },
+      sculpt: { cheekFull: 0.2, chin: -0.2, lipFull: -0.6, jawW: 0.2, noseW: 0.25 },
       // fix2：皱纹、老人斑、眼皮下垂按 PLAN（0.8 / 0.3），嘴角往下
       paint: { eyeShape: 'droop', brow: 'thin', wrinkles: 0.85, spots: 0.3, blush: 0.15, smile: -0.35 },
     };

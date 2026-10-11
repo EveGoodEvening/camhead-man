@@ -75,13 +75,15 @@ export function buildArm(mb: MeshBuilder, d: UpperDims, g: Readonly<GarmentSpec>
     R.push(ring(U(0.49), off + 0.0006 * s, 'sleeve'));
     // 折边：上沿往外一步 1.5mm，下沿硬边，往里收到皮肤
     R.push(ring(U(0.505), off + 0.0006 * s, 'sleeve', { crease: true }));
-    R.push(ring(U(0.515), off + 0.0022 * s, 'sleeve'));
-    R.push(ring(hem, off + 0.0028 * s, 'sleeve', { crease: true }));
+    // fix3：折边不往外撇（原来下沿比袖筒大 2.8mm，趴桌时从斜上方看袖口是一圈翘起来的尖边）
+    R.push(ring(U(0.515), off + 0.0012 * s, 'sleeve'));
+    R.push(ring(hem, off + 0.0011 * s, 'sleeve', { crease: true }));
     // 折边底面往里、略往下收（底面朝下朝外，没有翻回去的面）
     R.push(ring(hem - 0.004 * s, 0.0016 * s, 'sleeve'));
-    for (const u of [0.7, 0.84, 0.95]) R.push(ring(U(u), 0, 'skin'));
+    // fix3：肘上下多几圈（弯肘 1.9 rad 趴桌时肘尖不再折成一个尖角）
+    for (const u of [0.7, 0.8, 0.88, 0.95]) R.push(ring(U(u), 0, 'skin'));
     R.push(ring(dyE, 0, 'skin'));
-    for (const f of [0.14, 0.33, 0.57, 0.8]) R.push(ring(Fq(f), 0, 'skin'));
+    for (const f of [0.07, 0.15, 0.33, 0.57, 0.8]) R.push(ring(Fq(f), 0, 'skin'));
     R.push(ring(Fq(1), 0, 'skin'));
   } else if (kind === 'long' || kind === 'turnup') {
     const off = (u: number) => (0.0112 - 0.003 * u) * s + pad * 0.5;
@@ -151,7 +153,8 @@ export function buildArm(mb: MeshBuilder, d: UpperDims, g: Readonly<GarmentSpec>
   /** 胳膊圈的蒙皮：肘上下 3cm 混合（肘背一侧偏下，弯肘时不塌）；前臂末端带一点腕骨。 */
   const armSkin = (dy: number, z: number, sleeveEnd: boolean): Skin => {
     const back = smooth01(-0.3, 0.6, z / (0.035 * K));
-    const hi = dyE + 0.03 * s + 0.012 * s * back, lo = dyE - 0.03 * s + 0.02 * s * back;
+    // fix3：混合带加宽到肘上下 ~4.5cm（大角度弯肘时肘尖圆过去，不是一个尖）
+    const hi = dyE + 0.045 * s + 0.012 * s * back, lo = dyE - 0.042 * s + 0.02 * s * back;
     const we = smooth01(hi, lo, dy);
     let ww = 0.5 * smooth01(dyW + 0.07 * s, dyW, dy);
     if (sleeveEnd) ww = Math.min(ww, 0.3);

@@ -510,6 +510,23 @@ function paintNose(g: CanvasRenderingContext2D, hp: HeadParams, path: PathFn, fp
     path(qcurve([sgn * (ax + 0.004), yb + 0.0095], [sgn * (ax + 0.0055), yb + 0.004], [sgn * ax * 0.85, yb + 0.0005], 8));
     g.stroke();
   }
+  // fix3：女人的小鼻子在正面光下几乎看不出来：鼻梁两侧一道很软的影子（上淡下浓，到鼻翼上沿）、鼻梁一道淡淡的亮线
+  if (hp.female && !hp.child) {
+    for (const sgn of [-1, 1]) {
+      const pts: [number, number][] = qcurve([sgn * 0.0085, 0.152], [sgn * 0.0098, 0.128], [sgn * (ax + 0.0012), yb + 0.0075], 10);
+      for (let pass = 0; pass < 3; pass++) {
+        g.strokeStyle = css(mul(skin, 0.7), 0.06 + pass * 0.03);
+        g.lineWidth = 6 - pass * 2;
+        g.lineCap = 'round';
+        path(pts);
+        g.stroke();
+      }
+    }
+    g.strokeStyle = css(mul(skin, 1.12), 0.22);
+    g.lineWidth = 2;
+    path(qcurve([0, 0.15], [0, 0.13], [0, yb + 0.009], 8));
+    g.stroke();
+  }
 }
 
 // ---------------------------------------------------------------- 嘴
@@ -577,20 +594,37 @@ function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, p
     g.stroke();
   };
   // 抬头纹
+  // fix3：抬头纹是几段断开的、粗细浓淡不一的软折（不是左右对称的“~~”波浪线）：每道 2–3 段、各自略斜、一头淡出，整体淡一点
   const nF = k > 0.65 ? 4 : 3;
+  let seed = 9173 + Math.round(k * 100);
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const soft = (pts: [number, number][], a: number, w: number) => {
+    // 两头淡出：分三段画，中段最浓
+    const n = pts.length;
+    const cut = [0, Math.round(n * 0.3), Math.round(n * 0.7), n - 1];
+    const al = [0.55, 1, 0.55];
+    for (let q = 0; q < 3; q++) {
+      const seg = pts.slice(cut[q]!, cut[q + 1]! + 1);
+      if (seg.length > 1) crease(seg, a * al[q]!, w);
+    }
+  };
   for (let i = 0; i < nF; i++) {
-    const y = 0.186 + i * 0.0078 + (i % 2 ? 0.0006 : -0.0004);
-    // 抬头纹不是一整道、也不是尺子画的：中间断开、两边一高一低、长短不一，略带波
-    const wav = (x0: number, x1: number, y0: number, a: number) => {
+    const y = 0.186 + i * 0.0076 + (rnd() - 0.5) * 0.0016;
+    let x = -0.034 + rnd() * 0.006 + i * 0.002;
+    const xEnd = 0.033 - rnd() * 0.006 - i * 0.002;
+    while (x < xEnd - 0.006) {
+      const len = 0.012 + rnd() * 0.016;
+      const x1 = Math.min(xEnd, x + len);
+      const tilt = (rnd() - 0.5) * 0.002, bow = 0.0006 + rnd() * 0.0009;
       const pts: [number, number][] = [];
-      for (let j = 0; j <= 10; j++) {
-        const t = j / 10, x = x0 + (x1 - x0) * t;
-        pts.push([x, y0 + 0.0016 * Math.sin(Math.PI * t) + 0.0005 * Math.sin(t * 9 + i * 1.7 + x0 * 90)]);
+      for (let j = 0; j <= 8; j++) {
+        const t = j / 8, xx = x + (x1 - x) * t;
+        // 跟着额头的弧（中间高、两边低一点）+ 本段自己的一点弯
+        pts.push([xx, y + 0.0011 * (1 - (xx / 0.035) ** 2) + tilt * (t - 0.5) + bow * Math.sin(Math.PI * t)]);
       }
-      crease(pts, a);
-    };
-    wav(-0.032 + i * 0.003 + (i === 2 ? 0.006 : 0), -0.004 - (i === 1 ? 0.004 : 0), y, 0.42 - i * 0.06);
-    wav(0.002 + (i === 0 ? 0.004 : 0), 0.031 - i * 0.004, y + 0.0007, 0.38 - i * 0.06);
+      soft(pts, (0.3 - i * 0.045) * (0.7 + 0.3 * rnd()), 0.42 + rnd() * 0.15);
+      x = x1 + 0.003 + rnd() * 0.006;
+    }
   }
   // 眉间竖纹（老头）
   if (!hp.female) for (const s of [-1, 1]) crease([[s * 0.005, 0.163], [s * 0.0058, 0.172]], 0.35, 0.45, 0);
@@ -602,9 +636,9 @@ function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, p
     crease(qcurve([s * 0.024, 0.1365], [s * 0.036, 0.1305], [s * 0.048, 0.136], 8), 0.25);
     // 法令纹：鼻翼外 → 嘴角外
     // fix1：女人的法令纹、嘴角纹淡一些（原来在钠灯下读成一圈脏印/胡子影）
-    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.2 : 0.42, hp.female ? 0.5 : 0.65, 0);
+    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.14 : 0.42, hp.female ? 0.5 : 0.65, 0);
     // 嘴角下的纹
-    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.18 : 0.3, 0.45, 0);
+    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.1 : 0.3, 0.45, 0);
     // 下巴两侧往下的“木偶纹”、颈上的横纹由几何的腮肉托着；颧下一道浅沟
     crease(qcurve([s * 0.048, 0.118], [s * 0.052, 0.105], [s * 0.05, 0.092], 6), 0.16, 0.6, 0);
   }

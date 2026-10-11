@@ -269,13 +269,13 @@ export function whiskerPositions(): number[] {
   for (const sx of [-1, 1]) {
     for (let i = 0; i < 6; i++) {
       const y0 = 0.106 + (i % 3) * 0.004 - (i > 2 ? 0.002 : 0), z0 = -0.138 + (i > 2 ? 0.008 : 0);
-      const len = 0.05 + r() * 0.02;
-      const spread = (i % 3 - 1) * 0.35 + (r() - 0.5) * 0.15;
+      // fix3：短一点（长短不一）、弯一点（四段：往外 → 往后、往下弯成一道弧），不是一把直直的扇子
+      const len = (i % 3 === 1 ? 0.04 : 0.032) + r() * 0.012;
+      const spread = (i % 3 - 1) * 0.3 + (r() - 0.5) * 0.15;
       let px = sx * 0.017, py = y0, pz = z0;
-      // 三段折线，往外、往后、往下弯
-      for (let s = 1; s <= 3; s++) {
-        const t = s / 3;
-        const nx = sx * (0.017 + len * t * 0.95), ny = y0 + spread * len * t * 0.45 - 0.012 * t * t, nz = z0 + len * t * 0.35 + 0.01 * t * t;
+      for (let s = 1; s <= 4; s++) {
+        const t = s / 4;
+        const nx = sx * (0.017 + len * t * 0.9), ny = y0 + spread * len * t * 0.4 - 0.016 * t * t, nz = z0 + len * t * 0.3 + 0.018 * t * t;
         pts.push(px, py, pz, nx, ny, nz);
         px = nx; py = ny; pz = nz;
       }

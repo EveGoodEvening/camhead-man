@@ -120,7 +120,8 @@ export function section(d: UpperDims, p: Readonly<BodyProfile>, h: number, out: 
   // fix1：驼背的背更圆（上背一个鼓包，不是一块斜板）
   // （老周 kyph 1.0 不变：背后的线缆平面测试；王奶奶 1.4 多鼓 2cm）
   // fix2：王奶奶（kyph 1.4）的驼峰更大、更靠上，是一个圆背，不是腰上一折
-  if (d.kyph > 0) out.bb += 0.022 * s * Math.min(1, d.kyph) * gauss(h - 0.8, 0.28) + 0.085 * s * Math.max(0, d.kyph - 1) * gauss(h - 0.84, 0.24);
+  // fix3：王奶奶的驼峰再大一点、更圆（腰上弯得少了，背的弯主要靠这里）
+  if (d.kyph > 0) out.bb += 0.022 * s * Math.min(1, d.kyph) * gauss(h - 0.8, 0.28) + 0.11 * s * Math.max(0, d.kyph - 1) * gauss(h - 0.82, 0.26);
   out.n = spline([0, 0.45, 0.75, 1], [3, 2.85, 2.6, 2.4], h);
   // 老人肩往前扣
   out.zc = d.old || d.hunch ? -(0.015 * Math.min(1, d.kyph + 0.3) + 0.05 * Math.max(0, d.kyph - 1)) * s * THREE.MathUtils.smoothstep(h, 0.55, 1) : 0;

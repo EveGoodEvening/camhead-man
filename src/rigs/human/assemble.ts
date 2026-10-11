@@ -410,6 +410,7 @@ export function createHumanoidInternal(spec: HumanoidSpec, face?: FaceOpts, styl
     s,
     profile,
     land,
+    garment,
     parts,
     headMesh,
     get mode() { return mode; },

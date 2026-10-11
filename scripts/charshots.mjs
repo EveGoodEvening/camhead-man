@@ -88,6 +88,18 @@ const INSTALL = `
     return T.hidden.length;
   };
   T.spawned = () => globalThis.__char2spawned || [];
+  // fix1：头部近景对准真的头（姿势、驼背之后的 'head' 网格包围盒中心），矮个子、驼背的人不再只拍到帽顶
+  T.headOf = (root) => {
+    if (!root) return null;
+    root.updateMatrixWorld(true);
+    let head = null;
+    root.traverse(o => { if (!head && o.isMesh && o.name === 'head' && o.geometry) head = o; });
+    if (!head) return null;
+    if (!head.geometry.boundingBox) head.geometry.computeBoundingBox();
+    const bb = head.geometry.boundingBox.clone().applyMatrix4(head.matrixWorld);
+    return [(bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2];
+  };
+  T.headPos = (i) => (i === undefined ? T.headOf(T.spawned()[0] && T.spawned()[0].root) : T.headOf(T.rigs[i]));
   T.rot = (yawDeg, i = 0) => { const r = T.spawned()[i]; if (!r) return; r.root.rotation.y = yawDeg * Math.PI / 180; r.root.updateMatrixWorld(true); };
   window.__T = T;
   return true;
@@ -170,7 +182,9 @@ try {
           for (const [tag, yaw, cam, ty, fov] of views) {
             if (!wantView(tag)) continue;
             await ev(([ii, st, y]) => window.__T.solo(ii, st, y), [i, ST, yaw]);
-            await pose(cam, [ST[0], ty, ST[1]], fov);
+            const hp = tag.startsWith('head') ? await ev(ii => window.__T.headPos(ii), i) : null;
+            if (hp) await pose([ST[0], hp[1] + 0.03, hp[2] - 1.2], hp, fov);
+            else await pose(cam, [ST[0], ty, ST[1]], fov);
             await shoot(`solo_${k}_${look}_${tag}`);
           }
         }
@@ -197,7 +211,9 @@ try {
         for (const [vt, yaw, cam, ty, fov] of vv) {
           if (!wantView(vt)) continue;
           await ev(([y]) => window.__T.rot(y), [yaw]);
-          await pose(cam, [ST[0], ty, ST[1]], fov);
+          const hp = vt.startsWith('head') ? await ev(() => window.__T.headPos()) : null;
+          if (hp) await pose([ST[0], hp[1] + 0.03, hp[2] - 1.2], hp, fov);
+          else await pose(cam, [ST[0], ty, ST[1]], fov);
           await shoot(`${studio ? 'studio' : 'extra'}_${tag}_${vt}`);
         }
       }
@@ -249,7 +265,9 @@ try {
         await spawn({ op: 'spawn', clear: true, paper: { kind, seed, breathing: kind === 'vendor', lanternText: '引路' }, pos: [ST[0], 0, ST[1]], yaw: 0 });
         // 头部近景：摊主头心 ≈1.35 m，门童（1.1 m）≈0.925 m
         const hy = kind === 'boy' ? 0.925 : 1.35;
-        for (const [vt, yaw, d, y, ty, fov] of [['front', 0, 3, 0.9, 0.8, 40], ['q34', 40, 3, 1.0, 0.8, 40], ['side', 90, 3, 0.9, 0.8, 40], ['head', 0, 1.2, hy + 0.05, hy, 24]]) {
+        // fix1：门童的头部近景转 -35°、视角收窄，提着的灯笼不进画面（原来左边三分之一被灯笼晃白）
+        const headView = kind === 'boy' ? ['head', -35, 1.2, hy + 0.04, hy, 17] : ['head', 0, 1.2, hy + 0.05, hy, 24];
+        for (const [vt, yaw, d, y, ty, fov] of [['front', 0, 3, 0.9, 0.8, 40], ['q34', 40, 3, 1.0, 0.8, 40], ['side', 90, 3, 0.9, 0.8, 40], headView]) {
           if (!wantView(vt)) continue;
           await ev(([yy]) => window.__T.rot(yy), [yaw]);
           await pose(F(d, y), [ST[0], ty, ST[1]], fov);

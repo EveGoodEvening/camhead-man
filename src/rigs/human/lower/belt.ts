@@ -9,12 +9,24 @@ import type { BuildCtx, SkinnedPiece } from '../types';
 import { inflateRing, shiftRing, W } from './geom';
 
 const N = 24;
+/** fix1：土地的布腰带前面鼓出的量（×s）：腰带勒在酒桶肚上。 */
+export const DEITY_SASH_BULGE = 0.072;
 
 /** 腰带的一段外壳：WAIST → 下沿 bottom（同为 24 点圈）。thick = 外凸厚度。 */
-export function bandGeo(ctx: BuildCtx, bottom: Float32Array, thick: number): THREE.BufferGeometry {
+export function bandGeo(ctx: BuildCtx, bottom: Float32Array, thick: number, frontBulge = 0): THREE.BufferGeometry {
   const s = ctx.s;
   const Wr = Float32Array.from(ctx.seams.WAIST.pos);
   const top1 = inflateRing(shiftRing(Wr, -0.0015 * s), thick);
+  // fix1：土地的布腰带系在酒桶肚上：上沿前面往外鼓（腰带下沿 bottom 由调用方给，同样鼓出来）
+  if (frontBulge > 0) {
+    const c = ctx.seams.WAIST.centre;
+    for (let i = 0; i < N; i++) {
+      const dx = top1[i * 3]! - c[0], dz = top1[i * 3 + 2]! - c[2];
+      const l = Math.hypot(dx, dz) || 1;
+      const f = Math.max(0, -dz / l);
+      top1[i * 3 + 2] = top1[i * 3 + 2]! - frontBulge * Math.pow(f, 1.6);
+    }
+  }
   const bot1 = inflateRing(shiftRing(bottom, 0.0015 * s), thick);
   // 上下沿各一道硬边（重复圈：零面积的带不贡献法线，所以两侧各用各的法线）
   const rings = [bottom, bot1, Float32Array.from(bot1), top1, Float32Array.from(top1), Wr];
@@ -68,7 +80,7 @@ export function buildBelt(ctx: BuildCtx, bottom: Float32Array): SkinnedPiece[] {
 /** 布腰带（土地）：WAIST 往下 5cm 的一圈厚布带 + 左前的结与两条垂带。bottom = 带子下沿那圈（也是长袍顶圈）。 */
 export function buildSash(ctx: BuildCtx, bottom: Float32Array): SkinnedPiece[] {
   const s = ctx.s;
-  const band = ctx.track(bandGeo(ctx, bottom, 0.006 * s));
+  const band = ctx.track(bandGeo(ctx, bottom, 0.006 * s, ctx.profile.deity ? DEITY_SASH_BULGE * 0.92 * s : 0));
   // 结：左前（人物自己的左 = −x）一个扁圆疙瘩
   const yW = ctx.seams.WAIST.centre[1], yB = bottom[1]!;
   const yc = (yW + yB) / 2;

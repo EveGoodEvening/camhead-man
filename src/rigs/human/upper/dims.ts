@@ -34,6 +34,8 @@ export interface UpperDims {
   ntA: number; ntB: number;
   /** 关节绑定位置 */
   bind: JointLayout['bind'];
+  /** fix1：手指弯曲倍数（style.handCurl） */
+  curl?: number;
 }
 
 export function upperDims(_spec: Readonly<HumanoidSpec>, p: Readonly<BodyProfile>, s: number, layout: Readonly<JointLayout>, seams: Readonly<Seams>, g?: Readonly<GarmentSpec>): UpperDims {
@@ -62,8 +64,10 @@ export function upperDims(_spec: Readonly<HumanoidSpec>, p: Readonly<BodyProfile
   const pad = (g?.top === 'cotton_padded' ? 0.014 : g?.top === 'jacket' ? 0.006 : g?.top === 'zhongshan' ? 0.003 : 0) * s;
   // 腋下：胸侧收到胳膊内侧（绑定姿势胳膊竖直下垂，不能插进躯干）
   const hA = (yS - 0.108 * s - yW) / (ySt - yW);
-  const nbA = ntA * 1.13, nbB = ntB * 1.22;
-  const nbC = new THREE.Vector3(0, yC - 0.008 * s * (child ? 0.9 : 1), 0.003 * s);
+  // fix1：人头的脖子根更宽（往斜方肌、锁骨上窝铺开，不是一根直筒插在领子里）、领根抬高 6mm（看得见的脖子短一点）
+  const humanHead = _spec.head === 'human' || _spec.head === 'weasel';
+  const nbA = ntA * (humanHead ? 1.24 : 1.13), nbB = ntB * (humanHead ? 1.3 : 1.22);
+  const nbC = new THREE.Vector3(0, yC - 0.008 * s * (child ? 0.9 : 1) + (humanHead ? 0.006 * s : 0), 0.003 * s);
   return {
     s, female, child, old, deity, stout, hunch, kyph: Math.min(1.4, p.kyphosis / 0.25),
     W: s * p.bw, D: s * p.bd,
@@ -109,10 +113,12 @@ export function section(d: UpperDims, p: Readonly<BodyProfile>, h: number, out: 
   out.bf = spline(hs, bfs, h) + d.pad;
   out.bb = spline(hs, bbs, h) + d.pad;
   // 驼背：上背鼓起（胸椎后凸），前胸略平
-  if (d.kyph > 0) out.bb += 0.022 * s * d.kyph * gauss(h - 0.8, 0.28);
+  // fix1：驼背的背更圆（上背一个鼓包，不是一块斜板）
+  // （老周 kyph 1.0 不变：背后的线缆平面测试；王奶奶 1.4 多鼓 2cm）
+  if (d.kyph > 0) out.bb += 0.022 * s * Math.min(1, d.kyph) * gauss(h - 0.8, 0.28) + 0.05 * s * Math.max(0, d.kyph - 1) * gauss(h - 0.8, 0.22);
   out.n = spline([0, 0.45, 0.75, 1], [3, 2.85, 2.6, 2.4], h);
   // 老人肩往前扣
-  out.zc = d.old || d.hunch ? -0.011 * s * Math.min(1, d.kyph + 0.3) * THREE.MathUtils.smoothstep(h, 0.55, 1) : 0;
+  out.zc = d.old || d.hunch ? -0.015 * s * Math.min(1, d.kyph + 0.3) * THREE.MathUtils.smoothstep(h, 0.55, 1) : 0;
   return out;
 }
 
@@ -130,7 +136,8 @@ export function torsoPoint(d: UpperDims, p: Readonly<BodyProfile>, t: number, h:
   const back = cz > 0 ? Math.pow(cz, 1.5) * Math.sqrt(Math.max(0, 1 - Math.abs(cx))) : 0;
   // 肚子（胖子、土地：前面圆鼓）
   const belly = p.belly + (d.child ? 0.01 * s : 0);
-  if (belly > 0) z -= belly * (d.deity ? 1.15 : 0.8) * gauss(h - (d.deity ? 0.3 : 0.3), d.deity ? 0.32 : 0.22) * front;
+  // fix1：土地的酒桶肚更大、更靠下（腰带上下最鼓）
+  if (belly > 0) z -= belly * (d.deity ? 1.5 : 0.8) * gauss(h - (d.deity ? 0.08 : 0.3), d.deity ? 0.4 : 0.22) * front;
   // 女：胸
   if (d.female && p.bust > 0) {
     const yb = d.yS - 0.18 * s;

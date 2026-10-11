@@ -53,7 +53,8 @@ export function buildRobe(ctx: BuildCtx, st: LowerStyle, top24: Float32Array): R
     BB = table([0, 0.1, 0.2, 0.4, 0.7, 1], [bbT, bbT * 1.18, bbT * 1.27, bbT * 1.18, bbT * 1.1, bbT * 1.16]);
   } else {
     A = table([0, 0.1, 0.3, 0.6, 1], [aT, aT + 0.012 * s, 0.198 * s, 0.218 * s, 0.245 * s].map((v, i) => (i ? v * Math.max(1, p.bw / 1.14) : v)));
-    BF = table([0, 0.08, 0.2, 0.35, 0.6, 1], [bfT, bfT + 0.012 * s, bfT + 0.01 * s, bfT + 0.012 * s, bfT + 0.03 * s, 0.225 * s]);
+    // fix1：腰带下面接着酒桶肚往前鼓（再往下 A 字摆开），不是一条从胸口到下摆的直线
+    BF = table([0, 0.07, 0.16, 0.28, 0.42, 0.62, 1], [bfT, bfT + 0.024 * s, bfT + 0.034 * s, bfT + 0.03 * s, bfT + 0.026 * s, bfT + 0.036 * s, Math.max(0.235 * s, bfT + 0.05 * s)]);
     BB = table([0, 0.1, 0.3, 0.6, 1], [bbT, bbT + 0.008 * s, bbT + 0.02 * s, 0.17 * s, 0.212 * s]);
   }
   const yOf = (t: number) => yTop - (yTop - yHem) * t;
@@ -71,7 +72,8 @@ export function buildRobe(ctx: BuildCtx, st: LowerStyle, top24: Float32Array): R
     const warp = th + 0.32 * Math.sin(3 * th + 0.8) + 0.12 * Math.sin(5 * th + 2.1);
     const onset = 0.2 + 0.22 * (0.5 + 0.5 * Math.sin(5 * th + 1.3));
     const ramp = Math.pow(smooth01(onset, 1, t), 0.8);
-    const amp = (0.0045 + 0.0065 * back) * s * (1 - 0.8 * frontC);
+    // fix1：垂褶更深（游戏灯光下看得出来），前片中间也有浅褶
+    const amp = (0.0075 + 0.0085 * back) * s * (1 - 0.55 * frontC);
     return ramp * amp * (Math.sin(7 * warp) + 0.35 * Math.sin(13 * warp + 1.1));
   };
   const top48 = up48(top24);
@@ -266,7 +268,8 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
   /** 腿面高度（坐着时两条水平大腿的上表面 + 空隙；两腿之间略凹） */
   const lapY = (x: number) => {
     const ax = Math.abs(x);
-    if (ax <= hx) return yh + rt + gap - 0.02 * s * (1 - (ax / hx) ** 2);
+    // fix1：两腿之间的布往下兜得更深（腿面不是一块平板）
+    if (ax <= hx) return yh + rt + gap - 0.032 * s * Math.pow(1 - (ax / hx) ** 2, 1.5);
     // 大腿外侧：布从腿的最宽处略上方翻下（外沿 |x| = Wlap 处仍比髋关节高 0.39·(rt+gap)，侧面整段都盖住）
     const d = Math.min(1, ((ax - hx) / (rt + gap)) * 0.92);
     return yh + (rt + gap) * Math.sqrt(1 - d * d);
@@ -274,6 +277,7 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
   // 外沿：前 zKnee、后 zBack、半宽 Wlap 的圆角矩形（超椭圆 n = 6），按角度取点
   const zBack = 0.115 * s * Math.sqrt(p.bd) + gap;
   const zMid = (zKnee + zBack) / 2, hz = (zBack - zKnee) / 2;
+  const Wc0z = ctx.seams.WAIST.centre[2];
   const sp = (c: number, e: number) => Math.sign(c) * Math.pow(Math.abs(c), e);
   const P = new THREE.Vector3();
   for (let c = 0; c <= C; c++) {
@@ -290,12 +294,19 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
     O.y = E;
     const top = col[0]!;
     const path: THREE.Vector3[] = [top.clone()];
+    // fix1：土地的酒桶肚把腰带、袍子上口顶到了大腿根的前上方：坐下时前片先在肚子底下往回、往上兜到腿面，再往前铺
+    // （不然大腿根到肚皮之间一截没有布盖着）
+    let from = top;
+    if (p.deity && !qipao && top.z < Wc0z - 0.06 * s && backness < 0.5) {
+      from = new THREE.Vector3(top.x, Math.max(top.y, lapY(top.x) - 0.004 * s), top.z + 0.04 * s);
+      path.push(from.clone());
+    }
     // 横铺：顶圈 → O（前片往前上到腿面，不低于腿面）
     const K = 7;
     for (let k = 1; k <= K; k++) {
       const u = k / K;
-      const q = new THREE.Vector3().lerpVectors(top, O, u);
-      const ylin = top.y + (E - top.y) * Math.pow(u, backness > 0.5 ? 0.6 : 1.6);
+      const q = new THREE.Vector3().lerpVectors(from, O, u);
+      const ylin = from.y + (E - from.y) * Math.pow(u, backness > 0.5 ? 0.6 : 1.6);
       const onLap = q.z < -0.04 * s ? lapY(q.x) : -Infinity;
       q.y = Math.max(ylin, onLap);
       path.push(q);
@@ -319,7 +330,7 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
         const f = k / nDrop;
         const q = start.clone();
         q.y = start.y - (start.y - yEnd) * f;
-        q.addScaledVector(outDir, -(qipao ? 0.07 : 0.05) * s * between * Math.sin(Math.min(1, f * 1.5) * Math.PI / 2));
+        q.addScaledVector(outDir, -(qipao ? 0.095 : 0.06) * s * between * Math.sin(Math.min(1, f * 1.5) * Math.PI / 2));
         // 膝头把布顶出来：前帘在两膝处鼓、往下渐平（站在正前方看不再是一块平板）
         q.addScaledVector(outDir, 0.016 * s * kneeBump * (1 - f) * (1 - rear));
         q.addScaledVector(outDir, -0.025 * s * rear * f * f);
@@ -327,7 +338,8 @@ function seatedShape(ctx: BuildCtx, st: LowerStyle, geo: THREE.BufferGeometry, n
       }
     } else {
       const inward = new THREE.Vector3(-O.x * 0.5, 0, zMid - O.z).multiplyScalar(0.6);
-      path.push(O.clone().add(new THREE.Vector3(0, -0.012 * s, 0)), O.clone().add(inward).add(new THREE.Vector3(0, -0.015 * s, 0)));
+      // fix1：后片落到座面就往身下收（不在座面下面垂出一团）
+      path.push(O.clone().add(new THREE.Vector3(0, -0.004 * s, -0.006 * s)), O.clone().add(inward).add(new THREE.Vector3(0, -0.005 * s, 0)));
     }
     const len = pathLen(path), total = ell[nRows - 1]!;
     const scale = Math.min(1, len / Math.max(1e-6, total));

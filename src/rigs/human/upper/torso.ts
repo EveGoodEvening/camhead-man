@@ -39,7 +39,8 @@ export interface TorsoOut {
 
 const B = (n: Parameters<typeof boneIndex>[0]) => boneIndex(n);
 
-export interface TorsoPieces { torso: number; skin: number }
+/** fix1：inner = 没有人头（摄像头）时 V 口里、领口封口用的深色内衬（不是皮肤） */
+export interface TorsoPieces { torso: number; skin: number; inner?: number }
 
 /**
  * 躯干。pieces：torso（衬衫/袍料）与 skin（脖子、V 领里）的部件下标。
@@ -182,9 +183,12 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
   const W24 = Array.from({ length: W.count }, (_, i) => new THREE.Vector3(W.pos[i * 3]!, W.pos[i * 3 + 1]!, W.pos[i * 3 + 2]!));
   const wq = W.count / 4;
   if (hemDrop > 0) {
-    const hipA = Math.max(d.aW * 1.07, 0.17 * d.W * p.hipW + 0.016 * s) + d.pad;
-    const hipBf = Math.max(d.bWf, 0.108 * d.D) + 0.014 * s + d.pad;
-    const hipBb = Math.max(d.bWb, (d.female ? 0.125 : 0.115) * d.D) + 0.018 * s + d.pad;
+    // fix1：下摆贴着胯（裤子臀围 + 0.8–1.1cm），不再离身体 1.5–2cm 地撇出来像一圈裙撑
+    const hipA = Math.max(d.aW * 1.04, 0.17 * d.W * p.hipW + 0.009 * s) + d.pad;
+    const hipBf = Math.max(d.bWf, 0.108 * d.D) + 0.008 * s + d.pad;
+    const hipBb = Math.max(d.bWb, (d.female ? 0.125 : 0.115) * d.D) + 0.011 * s + d.pad;
+    // 下摆短（离腰不到 11cm）时只张到当地的胯宽（不到最宽的臀围）：新娘小袄的下摆不再是一圈平伸出去的边
+    const hipK = Math.pow(Math.min(1, hemDrop / (0.11 * s)), 0.8);
     const skirtRing = (yy: number, k: number, lip: number): THREE.Vector3[] => W24.map((w, i) => {
       const t = (i / W.count) * Math.PI * 2;
       const c = Math.cos(t), sn = -Math.sin(t);
@@ -192,8 +196,9 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       const az = Math.abs(w.z - W.centre[2]) || 1e-6;
       const wa = Math.abs(c) > 1e-6 ? ax / Math.pow(Math.abs(c), 2 / 3) : d.aW;
       void wa;
-      const fx = (d.aW + (hipA - d.aW) * k) / d.aW;
-      const fz = sn < 0 ? (d.bWb + (hipBb - d.bWb) * k) / d.bWb : (d.bWf + (hipBf - d.bWf) * k) / d.bWf;
+      const kk = k * hipK;
+      const fx = (d.aW + (hipA - d.aW) * kk) / d.aW;
+      const fz = sn < 0 ? (d.bWb + (hipBb - d.bWb) * kk) / d.bWb : (d.bWf + (hipBf - d.bWf) * kk) / d.bWf;
       const out = new THREE.Vector3(W.centre[0] + (w.x - W.centre[0]) * fx, yy, W.centre[2] + (w.z - W.centre[2]) * fz);
       // 衣襟下摆的几道垂褶（很浅）
       const fold = 0.0025 * s * k * Math.sin(7 * t + 1.3);
@@ -211,9 +216,10 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       return [[hips, 1 - wl], [B('hipR'), wl * r], [B('hipL'), wl * (1 - r)]];
     };
     const yHem = d.yW - hemDrop;
-    const ks = [1, 1, 0.97, 0.62, 0.22];
-    const ys = [yHem + 0.007 * s, yHem, yHem + 0.012 * s, yHem + hemDrop * 0.45, yHem + hemDrop * 0.82];
-    const lips = [0.005 * s, -0.0015 * s, -0.0015 * s, 0, 0];
+    // 下沿略往里收（布垂下来，不往外翘），折边是圆的
+    const ks = [0.9, 0.93, 0.95, 0.66, 0.24];
+    const ys = [yHem + 0.005 * s, yHem, yHem + 0.01 * s, yHem + hemDrop * 0.45, yHem + hemDrop * 0.82];
+    const lips = [0.003 * s, -0.0008 * s, -0.0012 * s, 0, 0];
     const rings: number[][] = [];
     for (let k = 0; k < ys.length; k++) {
       const pts = skirtRing(ys[k]!, ks[k]!, lips[k]!);
@@ -256,7 +262,8 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     }
     return true;
   };
-  const triSlot = (a: number, b: number, c: number) => (inV(a, b, c) ? pc.skin : pc.torso);
+  const vSlot = human ? pc.skin : (pc.inner ?? pc.skin);
+  const triSlot = (a: number, b: number, c: number) => (inV(a, b, c) ? vSlot : pc.torso);
   const stripV = (A: number[], Bv: number[]) => {
     for (let i = 0; i + 1 < A.length; i++) {
       const a = A[i]!, b = A[i + 1]!, c = Bv[i]!, e = Bv[i + 1]!;
@@ -268,7 +275,7 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
   if (vOpen) {
     for (let t = firstTri; t < mb.triCount; t++) {
       const a = mb.tri[t * 3]!, b = mb.tri[t * 3 + 1]!, c = mb.tri[t * 3 + 2]!;
-      if (mb.triPiece[t] === pc.torso && inV(a, b, c)) mb.triPiece[t] = pc.skin;
+      if (mb.triPiece[t] === pc.torso && inV(a, b, c)) mb.triPiece[t] = vSlot;
     }
   }
   stripV(rowsIdx[rs]!, yokeIdx[0]!);
@@ -282,8 +289,20 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     const ntPts = Array.from({ length: nN }, (_, i) => new THREE.Vector3(NT.pos[i * 3]!, NT.pos[i * 3 + 1]!, NT.pos[i * 3 + 2]!));
     const nbPts = Array.from({ length: nN }, (_, i) => neckBasePoint(d, (i / nN) * Math.PI * 2, 0, new THREE.Vector3()));
     const male = !d.female && !d.child;
+    const ntCen = new THREE.Vector3(NT.centre[0], 0, NT.centre[2]);
+    const nbCen = new THREE.Vector3(d.nbC.x, 0, d.nbC.z);
     const neckRing = (lam: number): THREE.Vector3[] => nbPts.map((b, i) => {
       const q = new THREE.Vector3().lerpVectors(b, ntPts[i]!, lam);
+      // fix1：半径不按直线插值：根部宽、往上先慢后快地收（侧面看脖子从肩上流上去，领口上面不是一圈空隙）
+      {
+        const rb = Math.hypot(b.x - nbCen.x, b.z - nbCen.z), rt = Math.hypot(ntPts[i]!.x - ntCen.x, ntPts[i]!.z - ntCen.z);
+        const cq = new THREE.Vector3().lerpVectors(nbCen, ntCen, lam);
+        const dq = new THREE.Vector3(q.x - cq.x, 0, q.z - cq.z);
+        const r0 = dq.length() || 1;
+        const r1 = rb + (rt - rb) * Math.pow(lam, 1.7);
+        q.x = cq.x + (dq.x / r0) * r1;
+        q.z = cq.z + (dq.z / r0) * r1;
+      }
       // 脖子中段略细；男人喉结（前面正中 +3mm）；胸锁乳突肌：前两侧略鼓
       const t = (i / nN) * Math.PI * 2;
       const c = Math.cos(t), sn = -Math.sin(t);
@@ -291,7 +310,7 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
       const dir = q.clone().sub(cen);
       dir.y = 0;
       const l = dir.length() || 1;
-      let dr = -0.003 * s * Math.sin(Math.PI * lam);
+      let dr = 0.0012 * s * Math.sin(Math.PI * lam);
       if (male && sn > 0) dr += 0.0032 * s * Math.pow(sn, 12) * gauss(lam - 0.45, 0.22);
       if (sn > 0) dr += 0.0015 * s * gauss(Math.abs(c) - 0.6, 0.18) * Math.sin(Math.PI * lam);
       return q.addScaledVector(dir, dr / l);
@@ -310,9 +329,9 @@ export function buildTorso(mb: MeshBuilder, ctx: BuildCtx, d: UpperDims, g: Read
     // 领口封口：领根圈往里收成一个浅碗（摄像头支架从这里出来）
     const inner = neckBase.slice(0, N).map(i => mb.P(i).lerp(new THREE.Vector3(d.nbC.x, mb.P(i).y, d.nbC.z), 0.55).add(new THREE.Vector3(0, 0.004 * s, 0)));
     const ir = mb.ring(inner, 1, () => [[spine, 0.85], [neck, 0.15]]);
-    mb.strip(neckBase, ir, pc.skin);
+    mb.strip(neckBase, ir, vSlot);
     const c = mb.v(d.nbC.x, d.nbC.y + 0.006 * s, d.nbC.z, 0.5, 1, [[spine, 0.8], [neck, 0.2]]);
-    for (let i = 0; i < N; i++) mb.t(ir[i]!, ir[i + 1]!, c, pc.skin);
+    for (let i = 0; i < N; i++) mb.t(ir[i]!, ir[i + 1]!, c, vSlot);
   }
   // 绕向：按到躯干中轴（x = 0，z = 当地中心）的方向定
   mb.orient(firstTri, mb.triCount, q => new THREE.Vector3(0, q.y, q.y > d.yC - 0.02 * s ? d.nbC.z : 0));

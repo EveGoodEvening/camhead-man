@@ -13,6 +13,7 @@ import type { BuildCtx, RegionResult, SkinnedPiece } from '../types';
 import { buildBelt, buildSash } from './belt';
 import { asymRing, inflateRing, lowerStyleOf, W } from './geom';
 import { buildRobe } from './robe';
+import { DEITY_SASH_BULGE } from './belt';
 import { buildShoes } from './shoes';
 import { buildTrousers, legFrame } from './trousers';
 
@@ -32,7 +33,9 @@ export function buildLower(ctx: BuildCtx): RegionResult {
     if (st.bottom === 'robe') {
       // 布腰带：WAIST 往下 5cm；长袍从带子下沿开始
       const aW = W0.pos[0]! - c[0], bW = W0.pos[18 * 3 + 2]! - c[2], bellyW = (c[2] - W0.pos[6 * 3 + 2]!) / bW - 1;
-      top24 = asymRing(c[0], c[1] - 0.05 * s, c[2], aW * 1.03, bW * 1.03, bW * 1.04, 24, 2.9, bellyW * 1.05);
+      // fix1：土地：带子下沿前面也鼓出来（酒桶肚一路接到长袍上）
+      const fb = ctx.profile.deity ? DEITY_SASH_BULGE * s : 0;
+      top24 = asymRing(c[0], c[1] - 0.05 * s, c[2], aW * 1.03 + fb * 0.18, bW * 1.03 + fb, bW * 1.04, 24, 2.9, bellyW * 1.05);
       parts.push(...buildSash(ctx, top24));
     }
     const robe = buildRobe(ctx, st, top24);

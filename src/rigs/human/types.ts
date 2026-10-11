@@ -107,6 +107,8 @@ export interface HumanoidStyle {
   garment?: Partial<GarmentSpec>;
   /** char2：体型覆盖（缺省由 profileOf 从 spec/face 推出） */
   profile?: Partial<BodyProfile>;
+  /** fix1：手指弯曲倍数（1 = 放松；老周端缸子 ≈ 2.4，握住缸把） */
+  handCurl?: number;
 }
 
 /**
@@ -165,6 +167,8 @@ export interface HumanoidInternal extends HumanoidRig {
   readonly profile: Readonly<BodyProfile>;
   /** char2：地标（配件按它摆） */
   readonly land: Readonly<Landmarks>;
+  /** fix1：已补全的服装款式（配件、torsoSurface 按真的衣服外表面摆） */
+  readonly garment?: Readonly<GarmentSpec>;
 }
 
 // ---------------------------------------------------------------- 关节、骨骼、地标（PLAN §2.1、§2.5）

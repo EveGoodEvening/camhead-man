@@ -277,6 +277,31 @@ export function vendorAtlas(): THREE.CanvasTexture {
   return vendorLo;
 }
 
+/** fix1：褶的明暗条（与 sectorLoft 的褶面一一对齐：面的边界在 φ = k·2π/(2·pleats)，按扇区的 from..to 落到 u 上）。 */
+function pleatShade(g: CanvasRenderingContext2D, rect: Rect, from: number, to: number, pleats: number): void {
+  const step = (Math.PI * 2) / (pleats * 2);
+  g.save();
+  g.beginPath();
+  g.rect(rect[0], rect[1], rect[2], rect[3]);
+  g.clip();
+  for (let i = Math.floor(from / step) - 1; i <= Math.ceil(to / step); i++) {
+    const u0 = (i * step - from) / (to - from), u1 = ((i + 1) * step - from) / (to - from);
+    if (u1 < 0 || u0 > 1) continue;
+    const x0 = rect[0] + u0 * rect[2], x1 = rect[0] + u1 * rect[2];
+    const gr = g.createLinearGradient(x0, 0, x1, 0);
+    const lite = 'rgba(255,248,232,0.16)', dark = 'rgba(0,0,0,0.3)';
+    const even = ((i % 2) + 2) % 2 === 0;
+    gr.addColorStop(0, even ? lite : dark);
+    gr.addColorStop(1, even ? dark : lite);
+    g.fillStyle = gr;
+    g.fillRect(x0, rect[1], x1 - x0, rect[3]);
+    // 褶棱：一道细亮线
+    g.fillStyle = 'rgba(255,246,226,0.22)';
+    g.fillRect(even ? x0 : x1 - 1, rect[1], 1, rect[3]);
+  }
+  g.restore();
+}
+
 /** scale：1 = 1024²，2 = 2048²（同布局）；hiCell ≥ 0 时只把这一格画成高清破绽版（其余区域照画，保证布局一致）。 */
 function paintVendorAtlas(scale: number, hiCell: number): THREE.CanvasTexture {
   const { canvas, g } = createCanvas(ATLAS * scale, ATLAS * scale);
@@ -320,6 +345,13 @@ function paintVendorAtlas(scale: number, hiCell: number): THREE.CanvasTexture {
   g.fillRect(R.collar[0], R.collar[1] + 3, R.collar[2], 3);
   g.fillRect(R.collar[0], R.collar[1] + R.collar[3] - 6, R.collar[2], 3);
   fillPaper(g, R.lip, shade(VENDOR.jacket, 0.4), 17);
+  // fix1：手风琴褶的明暗画进图集（每一面从亮到暗，相邻两面相反）：市场的暗光下 3m 外也看得出一道道褶，不是一块平板
+  {
+    const F = Math.PI / 2, B = 1.5 * Math.PI, half = 0.9;
+    pleatShade(g, R.robeFront, F - half, F + half, 12);
+    pleatShade(g, R.robeBack, B - half, B + half, 12);
+    pleatShade(g, R.robeSide, -(Math.PI / 2 - half), F - half, 12);
+  }
   bambooEdge(g, R.robeFront);
   bambooEdge(g, R.robeBack);
   bambooEdge(g, R.robeSide);
@@ -423,7 +455,8 @@ function vendorParts(k: number): { body: THREE.BufferGeometry[]; face: THREE.Buf
     [0.004, 0.245, 0.165], [0.2, 0.23, 0.153], [0.42, 0.212, 0.139], [0.64, 0.197, 0.126], [0.84, 0.186, 0.116], [0.93, 0.181, 0.111],
   ].map(([y, a, b]) => ({ y: K(y!), a: K(a!), bf: K(b!), bb: K(b! * 1.04), n: 2.4 }));
   sectorLoft(mb, robe, fourSectors(rectUv(R.robeFront), rectUv(R.robeBack), rectUv(R.robeSide)), {
-    group: 0, pleats: 12, amp: K(0.006), inside: y => new THREE.Vector3(0, y, 0),
+    // fix1：褶更深（市场灯光下 3m 外看得出一道道手风琴褶）
+    group: 0, pleats: 12, amp: K(0.0105), inside: y => new THREE.Vector3(0, y, 0),
   });
   // 马褂：光滑放样（前后片 + 两侧），下摆往里折一圈
   const jacket: LoftRow[] = [

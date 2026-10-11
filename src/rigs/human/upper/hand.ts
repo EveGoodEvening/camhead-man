@@ -106,7 +106,8 @@ export function buildHand(mb: MeshBuilder, d: UpperDims, wristRing: number[], wr
     const rw = f.w * hs * fingerW * (child ? 1.12 : 1), rt = f.t * hs * fingerW * thick;
     const base = new THREE.Vector3(wrist.x + 0.0018 * hs, wrist.y + f.dy * hs, wrist.z + f.z * hs);
     const d0 = new THREE.Vector3(0, -1, 0).applyAxisAngle(new THREE.Vector3(1, 0, 0), f.fan);
-    const c1 = -12 * D2R * f.curl, c2 = -25 * D2R * f.curl, c3 = -15 * D2R * f.curl;
+    const ck = d.curl ?? 1;
+    const c1 = -12 * D2R * f.curl * ck, c2 = -25 * D2R * f.curl * Math.min(ck, 2.6), c3 = -15 * D2R * f.curl * Math.min(ck, 2.2);
     const d1 = rotZ(d0.clone(), c1), d2 = rotZ(d1.clone(), c2), d3 = rotZ(d2.clone(), c3);
     const x0 = new THREE.Vector3(1, 0, 0);
     const x1 = rotZ(x0.clone(), c1), x2 = rotZ(x1.clone(), c2), x3 = rotZ(x2.clone(), c3);

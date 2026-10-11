@@ -217,13 +217,15 @@ registerSelftest('char2.layout', () => {
   const s = 1.2 / 1.75;
   const child = jointLayout(profileOf({ height: 1.2, shirt: '#888', pants: '#444', head: 'human' }, { skin: '#c99a78', hair: '#222', hairStyle: 'child_bowl', age: 'child' }), s);
   const cw: Record<string, [number, number, number]> = {
-    hips: [0, 0.88 * s, 0], hipR: [0.085 * s, -0.03 * s, 0], kneeR: [0, -0.4 * s, 0], ankleR: [0, -0.38 * s, 0], spine: [0, 0.1 * s, 0], neck: [0, 0.455 * s, 0],
-    shoulderR: [0.17 * s, 0.36 * s, 0], elbowR: [0, -0.27 * s, 0], wristR: [0, -0.225 * s, 0],
+    hips: [0, 0.82 * s, 0], hipR: [0.085 * s, -0.03 * s, 0], kneeR: [0, -0.37 * s, 0], ankleR: [0, -0.345 * s, 0], spine: [0, 0.1 * s, 0], neck: [0, 0.44 * s, 0],
+    headSlot: [0, -0.025 * s, 0], shoulderR: [0.17 * s, 0.355 * s, 0], elbowR: [0, -0.255 * s, 0], wristR: [0, -0.215 * s, 0],
   };
   bad = Object.entries(cw).filter(([j, v]) => !child.local[j as keyof typeof child.local].every((x, i) => near(x, v[i]!, 1e-9))).map(([j]) => j);
-  r.t('儿童布局（hips 0.88s、领口 1.435s、肩 ±0.17s@0.36s、肘 -0.27s、腕 -0.225s、膝 -0.40s、踝 -0.38s）', bad.length === 0 && near(child.collarY, 1.435 * s, 1e-9), bad.join(','));
+  // fix1：孩子 5.3–5.6 头身（hips 0.82s、领口 1.36s、headSlot -0.025s、头 ×1.38）
+  r.t('儿童布局（hips 0.82s、领口 1.36s、headSlot -0.025s、肩 ±0.17s@0.355s、肘 -0.255s、腕 -0.215s、膝 -0.37s、踝 -0.345s、踝高 0.075s）',
+    bad.length === 0 && near(child.collarY, 1.36 * s, 1e-9) && near(child.bind.ankleR[1], 0.075 * s, 1e-9), bad.join(','));
   const deity = jointLayout(profileOf({ height: 1.2, build: 'stout', shirt: '#888', pants: '#444', head: 'human' }, undefined, { profile: { deity: true } }), s);
-  r.t('土地布局（hips 0.84s、neck 0.40s、踝高 0.075s）', near(deity.hipsY, 0.84 * s, 1e-9) && near(deity.local.neck[1], 0.4 * s, 1e-9) && near(deity.bind.ankleR[1], 0.075 * s, 1e-6), `ankle ${deity.bind.ankleR[1].toFixed(4)}`);
+  r.t('土地布局（hips 0.84s、neck 0.33s、headSlot -0.02s、踝高 0.075s）', near(deity.hipsY, 0.84 * s, 1e-9) && near(deity.local.neck[1], 0.33 * s, 1e-9) && near(deity.local.headSlot[1], -0.02 * s, 1e-9) && near(deity.bind.ankleR[1], 0.075 * s, 1e-6), `ankle ${deity.bind.ankleR[1].toFixed(4)}`);
   const adult = jointLayout(profileOf({ height: 1.75, shirt: '#888', pants: '#444', head: 'human' }), 1);
   r.t('成年人领口 1.50、踝高 0.075', near(adult.collarY, 1.5, 1e-9) && near(adult.bind.ankleR[1], 0.075, 1e-9));
   const legacyChild = jointLayout(profileOf({ height: 1.2, shirt: '#888', pants: '#444', head: 'human' }, { skin: '#c99a78', hair: '#222', hairStyle: 'crop', age: 'child' }), s, { legacy: true });
@@ -309,7 +311,7 @@ registerSelftest('char2.seams', () => {
     && wa.skin.bones[0] === boneIndex('hips') && wa.skin.weights[0] === 0.65 && wa.skin.bones[1] === boneIndex('spine'));
   r.t('WAIST 成年人：y 0.975、半宽 0.150、半深 0.104', near(wa.pos[1]!, 0.975, 1e-6) && near(wa.pos[0]!, 0.15, 1e-6) && near(-wa.pos[6 * 3 + 2]!, 0.104, 1e-6), `${f3([wa.pos[0]!, wa.pos[1]!, wa.pos[6 * 3 + 2]!])}`);
   const fem = SEAMS(profileOf(base, { skin: '#c', hair: '#2', hairStyle: 'bun', age: 'young', female: true }), 1);
-  r.t('女：NECK_TOP x×0.88 z×0.90、WAIST x×0.92 z×0.95', near(fem.NECK_TOP.pos[0]! - fem.NECK_TOP.centre[0], 0.052 * 0.88, 1e-6) && near(fem.WAIST.pos[0]!, 0.15 * 0.92, 1e-6)
+  r.t('女：NECK_TOP x×0.93 z×0.95（fix1）、WAIST x×0.92 z×0.95', near(fem.NECK_TOP.pos[0]! - fem.NECK_TOP.centre[0], 0.052 * 0.93, 1e-6) && near(fem.WAIST.pos[0]!, 0.15 * 0.92, 1e-6)
     && near(-fem.WAIST.pos[6 * 3 + 2]!, 0.104 * 0.95, 1e-6));
   const stout = SEAMS(profileOf({ ...base, build: 'stout' }), 1).WAIST;
   r.t('stout WAIST 前面鼓出 belly·0.5', near(-stout.pos[6 * 3 + 2]!, 0.104 * 1.22 + 0.025, 1e-6), (-stout.pos[6 * 3 + 2]!).toFixed(4));

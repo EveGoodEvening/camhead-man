@@ -200,13 +200,15 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
     if (h) button(mb, h.p.clone().addScaledVector(h.n, 0.0016 * s), h.n, 0.0058 * s, 0.0026 * s, pc.top, skinAt(h.p));
   }
   // ---- 口袋
-  const pocket = (cx: number, yTop: number, w: number, hgt: number, flap: number, buttonOn: boolean) => {
+  const pocket = (cx: number, yTop: number, w: number, hgt: number, flap: number, buttonOn: boolean, dense = false) => {
     if (DEBUG_POCKETS) console.warn('pocket', cx.toFixed(3), yTop.toFixed(3), w.toFixed(3), hgt.toFixed(3));
-    const body = gridFront(cx - w / 2, cx + w / 2, yTop - hgt, yTop, Math.max(5, Math.round(hgt / (0.018 * s))), Math.max(6, Math.round(w / (0.015 * s))));
-    if (body) slab(mb, body, 0.0021 * s, pc.body, skinAt);
+    // fix1：格子密一点（贴着弯的衣服表面走，衣身不从薄片中间顶出来成锯齿）、抬高一点
+    const body = gridFront(cx - w / 2, cx + w / 2, yTop - hgt, yTop, Math.max(6, Math.round(hgt / ((dense ? 0.011 : 0.017) * s))), Math.max(8, Math.round(w / ((dense ? 0.014 : 0.014) * s))));
+    if (body) slab(mb, body, 0.0026 * s, pc.body, skinAt, 0.0025 * s);
     else if (DEBUG_POCKETS) console.warn('pocket body miss', cx, yTop, w, hgt);
     // 袋盖：底边中间略尖
-    const ni = 3, nj = 7;
+    // 跨腰线的大口袋（中山装下兜）：衣服表面在这里先凹后鼓，袋盖多几行才贴得住
+    const ni = dense ? 5 : 3, nj = dense ? 10 : 8;
     const rows: { p: THREE.Vector3; n: THREE.Vector3 }[][] = [];
     for (let i = 0; i < ni; i++) {
       const row: { p: THREE.Vector3; n: THREE.Vector3 }[] = [];
@@ -220,7 +222,7 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
       }
       rows.push(row);
     }
-    slab(mb, rows, 0.0034 * s, pc.top, skinAt);
+    slab(mb, rows, 0.0042 * s, pc.top, skinAt, 0.0025 * s);
     if (buttonOn) {
       const hb = front(cx, yTop + 0.004 * s - flap * 0.62);
       if (hb) button(mb, hb.p.clone().addScaledVector(hb.n, 0.0034 * s), hb.n, 0.0045 * s, 0.002 * s, pc.top, skinAt(hb.p));
@@ -235,7 +237,7 @@ export function buildOverlays(mb: MeshBuilder, d: UpperDims, g: Readonly<Garment
   } else if (pockets === 'zhongshan4') {
     for (const sx of [-1, 1]) pocket(sx * 0.072 * W, yChest + 0.005 * s, 0.092 * s, 0.11 * s, 0.032 * s, true);
     const yLow = d.yW + 0.025 * s;
-    for (const sx of [-1, 1]) pocket(sx * 0.078 * W, yLow, 0.118 * s, Math.min(0.14 * s, yLow - yBottom - 0.03 * s), 0.038 * s, true);
+    for (const sx of [-1, 1]) pocket(sx * 0.078 * W, yLow, 0.118 * s, Math.min(0.14 * s, yLow - yBottom - 0.03 * s), 0.038 * s, true, true);
   }
   // ---- 大襟（王奶奶）：从领口正前方斜到右腋下，再顺右侧缝往下；滚边 + 几副盘扣
   if (placket === 'side_frog') {

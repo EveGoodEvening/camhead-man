@@ -98,6 +98,7 @@ function weaselSurface(): HeadSurface {
   return {
     p,
     hair: { line: null, tTop: 0, tSide: 0, tBack: 0, tNape: 0, ramp: 0.02 },
+    noseBase: -1,
     f, base, features,
     hairAt: () => 0,
     final(psi, alpha, out: V3 = [0, 0, 0]) {

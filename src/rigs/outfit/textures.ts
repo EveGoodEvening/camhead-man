@@ -301,7 +301,8 @@ export function floralTexture(base = '#5B6E8C', seed = 3): THREE.CanvasTexture {
     g.fillRect(0, 0, w, h);
     const r = rng(seed);
     const leaf = shade(base, 0.72);
-    const N = 15, cw = w / N;
+    // fix1：碎花更小更密、颜色压低（原来 15×15 的花在钠灯下读成一颗颗黄星星）
+    const N = 22, cw = w / N;
     const draw = (fn: (ox: number, oy: number) => void) => {
       for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) fn(ox, oy);
     };
@@ -309,8 +310,8 @@ export function floralTexture(base = '#5B6E8C', seed = 3): THREE.CanvasTexture {
       for (let i = 0; i < N; i++) {
         const x = (i + 0.5 + (j % 2) * 0.5 + range(r, -0.35, 0.35)) * cw, y = (j + 0.5 + range(r, -0.5, 0.5)) * cw;
         const pick = r();
-        const petal = pick < 0.62 ? '#E6E1D3' : pick < 0.82 ? '#E3A7A2' : '#EDD58C';
-        const rad = range(r, 2.2, 3.1), rot = r() * Math.PI;
+        const petal = pick < 0.62 ? '#BDBAB2' : pick < 0.84 ? '#BC8E8E' : '#BDB07E';
+        const rad = range(r, 1.5, 2.1), rot = r() * Math.PI;
         const la = r() * Math.PI * 2;
         draw((ox, oy) => {
           // 两片小叶
@@ -328,16 +329,16 @@ export function floralTexture(base = '#5B6E8C', seed = 3): THREE.CanvasTexture {
             g.ellipse(x + ox + Math.cos(a) * rad * 0.62, y + oy + Math.sin(a) * rad * 0.62, rad * 0.55, rad * 0.4, a, 0, Math.PI * 2);
             g.fill();
           }
-          g.fillStyle = '#B8902E';
+          g.fillStyle = '#8C7440';
           g.beginPath();
-          g.arc(x + ox, y + oy, rad * 0.28, 0, Math.PI * 2);
+          g.arc(x + ox, y + oy, rad * 0.26, 0, Math.PI * 2);
           g.fill();
         });
       }
     }
     // 碎点：花间零星的小白点
-    g.fillStyle = 'rgba(230,225,211,0.75)';
-    for (let i = 0; i < 140; i++) g.fillRect(r() * w, r() * h, 1.2, 1.2);
+    g.fillStyle = 'rgba(200,196,186,0.5)';
+    for (let i = 0; i < 160; i++) g.fillRect(r() * w, r() * h, 1, 1);
     clothWeave(g, 0, 0, w, h, seed + 1, { amp: 0.04 });
   }, { repeat: [1, 1] }));
 }

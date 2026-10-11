@@ -10,7 +10,7 @@ import { canvasToTexture, createCanvas, hexRgb } from '../../../kit/canvas';
 import { rng } from '../../../kit/rng';
 import type { FaceOpts, FacePaint } from '../types';
 import { DEG, EAR_ISLAND, alphaOfV, dirOf, g2, psiOfU, sstep, uvOfPoint, vOfAlpha } from './mapping';
-import { type HeadParams, hairCover, headParams } from './params';
+import { type HeadParams, hairCover, hairEdge, hairFade, headParams } from './params';
 import { headSurface } from './shape';
 
 const W = 512, H = 384;
@@ -179,7 +179,7 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
         }
         for (const [sx, sy, sr] of spots) {
           const k = g2(p.x - sx, p.y - sy, sr, sr * 0.8) * fr;
-          if (k > 0.02) c = mix(c, mul(skin, 0.72), k * 0.5);
+          if (k > 0.02) c = mix(c, mul(skin, 0.8), k * 0.4);
         }
       }
       const k = (Y * W + X) * 4;
@@ -234,7 +234,7 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
       const psi = psiOfU(u);
       let c = hairC;
       // 发根深（发际线一带）、头顶一道柔和的高光（顺着头顶的弧）
-      const lo = def.line(Math.abs(psi));
+      const lo = hairEdge(def, psi);
       c = mul(c, 0.9 + 0.1 * sstep(lo, lo + 10 * DEG, alpha));
       const hl = g2(alpha - 150 * DEG, Math.abs(psi) - 0.0, 9 * DEG, 70 * DEG) * 0.6 + g2(alpha - 138 * DEG, Math.abs(psi), 6 * DEG, 50 * DEG) * 0.3;
       c = mix(c, light, Math.min(0.32, hl * 0.32 * (1 + (noise(X * 0.4, Y * 0.08) - 0.5))));
@@ -260,8 +260,22 @@ function paintFace(g: CanvasRenderingContext2D, o: Readonly<FaceOpts>): void {
       const u = (X + 0.5) / W;
       if (earIsland(u, v)) continue;
       const psi = psiOfU(u);
-      const jit = (noise(X * 0.7 + 31, Y * 0.35) - 0.5) * 1.6 * DEG;
-      let m = hairCover(def, psi, alpha + jit, 1.5);
+      const jit = (noise(X * 0.7 + 31, Y * 0.35) - 0.5) * 2.6 * DEG + (noise(X * 2.1 + 7, Y * 0.9) - 0.5) * 1.4 * DEG;
+      let m = hairCover(def, psi, alpha + jit, 1.9);
+      // fix1：往后梳的发型，发际线那一圈头发稀、透出头皮（不是一道齐刘海的深色边）
+      if (def.bun) {
+        const lo = hairEdge(def, psi);
+        m *= 0.55 + 0.45 * sstep(lo, lo + 7 * DEG, alpha);
+      }
+      // fix1：推短的两鬓透出头皮（发色与肤色各半，带一点颗粒），不是一圈实心的头盔边
+      const fd = hairFade(def, psi, alpha);
+      if (fd > 0) m *= 1 - fd * (0.62 + 0.25 * (noise(X * 1.9 + 3, Y * 1.7) - 0.5));
+      // 分缝：露出一道头皮
+      if (def.part) {
+        const lo = hairEdge(def, psi);
+        const along = sstep(lo + 1 * DEG, lo + 8 * DEG, alpha) * (1 - sstep(150 * DEG, 168 * DEG, alpha));
+        m *= 1 - 0.75 * along * Math.exp(-(((psi - def.part.psi) / (def.part.width * 0.32)) ** 2));
+      }
       // 稀发：头顶透出头皮
       if (hp.hair === 'thin_old') m *= 1 - 0.35 * sstep(150 * DEG, 175 * DEG, alpha) * (0.6 + 0.8 * noise(X * 0.3, Y * 0.3));
       if (m <= 0) continue;
@@ -459,19 +473,33 @@ function paintBrows(g: CanvasRenderingContext2D, hp: HeadParams, pt: ReturnType<
 function paintNose(g: CanvasRenderingContext2D, hp: HeadParams, path: PathFn, fp: Fp, skin: RGB): void {
   const yb = (hp.child ? 0.1115 : hp.female ? 0.1068 : 0.1035) - 0.003 * hp.sc.noseLen;
   const ax = 0.0135 * (1 + 0.2 * hp.sc.noseW) * (hp.child ? 0.8 : hp.female ? 0.92 : 1);
-  // 鼻孔：鼻底两侧两个暗的小凹（几何是坡，靠画）
-  for (const sgn of [-1, 1]) {
-    const [X, Y] = fp(sgn * ax * 0.5, yb + 0.0022);
-    const [X2, Y2] = fp(sgn * ax * 0.5 + 0.0035, yb + 0.0022 + 0.0015);
-    // 集成：鼻孔浅一点、小一点（鼻底几何本身在顶光下已有阴影；太黑连着唇上的影子读成一撇胡子）
-    const rx = Math.max(1.8, Math.abs(X2 - X) * 0.85), ry = Math.max(1.2, Math.abs(Y2 - Y) * 0.85);
-    g.fillStyle = css(mul(skin, 0.5), 0.72);
+  // fix1：鼻孔只是两个小而淡的点（面积约原来的 40%、透明度一半）；鼻小柱与人中一带提亮一点，
+  // 跟鼻底几何的影子合不成一道“一字胡”
+  {
+    const [Xc, Yc] = fp(0, yb - 0.0012);
+    const [Xe, Ye] = fp(0.012, yb - 0.0085);
+    const grad = g.createRadialGradient(Xc, Yc, 0, Xc, Yc, Math.max(4, Math.hypot(Xe - Xc, Ye - Yc)));
+    grad.addColorStop(0, css(mul(skin, 1.1), 0.5));
+    grad.addColorStop(1, css(mul(skin, 1.1), 0));
+    g.fillStyle = grad;
     g.beginPath();
-    g.ellipse(X, Y, rx, ry, 0, 0, Math.PI * 2);
+    g.ellipse(Xc, Yc + Math.abs(Ye - Yc) * 0.35, Math.abs(Xe - Xc) * 1.2, Math.abs(Ye - Yc) * 1.1, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (const sgn of [-1, 1]) {
+    const [X, Y] = fp(sgn * ax * 0.52, yb + 0.0024);
+    const [X2, Y2] = fp(sgn * ax * 0.52 + 0.0035, yb + 0.0024 + 0.0015);
+    const rx = Math.max(1.1, Math.abs(X2 - X) * 0.55), ry = Math.max(0.8, Math.abs(Y2 - Y) * 0.55);
+    const gr = g.createRadialGradient(X, Y, 0, X, Y, rx * 1.3);
+    gr.addColorStop(0, css(mul(skin, 0.55), 0.42));
+    gr.addColorStop(1, css(mul(skin, 0.7), 0));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.ellipse(X, Y, rx * 1.3, ry * 1.3, 0, 0, Math.PI * 2);
     g.fill();
     // 鼻翼的褶
-    g.strokeStyle = css(mul(skin, 0.72), 0.32);
-    g.lineWidth = 1.2;
+    g.strokeStyle = css(mul(skin, 0.74), 0.26);
+    g.lineWidth = 1.1;
     path(qcurve([sgn * (ax + 0.004), yb + 0.0095], [sgn * (ax + 0.0055), yb + 0.004], [sgn * ax * 0.85, yb + 0.0005], 8));
     g.stroke();
   }
@@ -551,9 +579,10 @@ function paintWrinkles(g: CanvasRenderingContext2D, hp: HeadParams, k: number, p
     // 眼袋下沿
     crease(qcurve([s * 0.022, 0.141], [s * 0.034, 0.1355], [s * 0.046, 0.1405], 8), 0.38);
     // 法令纹：鼻翼外 → 嘴角外
-    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.32 : 0.45, hp.female ? 0.6 : 0.7, 0);
+    // fix1：女人的法令纹、嘴角纹淡一些（原来在钠灯下读成一圈脏印/胡子影）
+    crease(qcurve([s * 0.0195, 0.1085], [s * 0.031, 0.096], [s * 0.0315, 0.0735], 12), hp.female ? 0.2 : 0.42, hp.female ? 0.5 : 0.65, 0);
     // 嘴角下的纹
-    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.18 : 0.26, 0.45, 0);
+    crease([[s * 0.027, 0.077], [s * 0.029, 0.066]], hp.female ? 0.1 : 0.24, 0.45, 0);
   }
 }
 
@@ -616,20 +645,23 @@ function hairStrands(h: CanvasRenderingContext2D, hp: HeadParams, def: ReturnTyp
 function flyaways(g: CanvasRenderingContext2D, def: ReturnType<typeof headSurface>['hair'], hair: RGB, r: () => number): void {
   if (!def.line) return;
   g.lineCap = 'round';
-  for (let i = 0; i < 260; i++) {
-    const u = 0.12 + r() * 0.76;
+  // fix1：更多、更长、方向各异的碎发，把发际线打散（越过边线伸到额头上、鬓角上）
+  for (let i = 0; i < 520; i++) {
+    const u = 0.1 + r() * 0.8;
     const psi = psiOfU(u);
-    const a = def.line(Math.abs(psi));
+    const a = hairEdge(def, psi);
     if (def.minPsi !== undefined && Math.abs(psi) < def.minPsi) continue;
-    const v0 = vOfAlpha(a + (0.4 + r()) * DEG);
+    // 往后梳的（发髻、低髻）：碎发从发际线下面一点往上、往后翘（胎毛），不是往脸上垂的刘海
+    const back = !!def.bun;
+    const v0 = vOfAlpha(a + (back ? r() * 1.6 - 1.4 : r() * 3.2 - 0.6) * DEG);
     const X = u * W, Y = (1 - v0) * H;
-    const len = 2 + r() * 5;
-    g.strokeStyle = css(mul(hair, 0.9), 0.25 + r() * 0.25);
-    g.lineWidth = 0.5 + r() * 0.5;
+    const len = (back ? 2 : 2.5) + r() * (back ? 4 : 7);
+    const ang = (back ? -Math.PI / 2 : Math.PI / 2) + (r() - 0.5) * 1.3 + (u - 0.5) * 1.1;
+    g.strokeStyle = css(mul(hair, 0.85 + r() * 0.3), 0.22 + r() * 0.3);
+    g.lineWidth = 0.5 + r() * 0.6;
     g.beginPath();
     g.moveTo(X, Y);
-    g.lineTo(X + (r() - 0.5) * 3, Y + len);
+    g.quadraticCurveTo(X + Math.cos(ang) * len * 0.5 + (r() - 0.5) * 2, Y + Math.sin(ang) * len * 0.5, X + Math.cos(ang) * len, Y + Math.sin(ang) * len);
     g.stroke();
   }
 }
-

@@ -43,6 +43,7 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
   const { spec, s } = ctx;
   const g = ctx.garment;
   const d = upperDims(spec, ctx.profile, s, ctx.layout, ctx.seams, g);
+  if (ctx.style?.handCurl) d.curl = ctx.style.handCurl;
   const mb = new MeshBuilder();
   const robe = g.top === 'robe_top';
   const torsoSlot = robe ? 'robe' : 'torso';
@@ -50,14 +51,17 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
   const pSkin = mb.piece({ name: 'skin', slot: 'skin' });
   const pSleeve = mb.piece(robe ? { name: 'sleeves', slot: 'robe', own: true, capsulePad: 0.02 * s } : { name: 'sleeves', slot: 'sleeve' });
 
+  // fix1：摄像头/无头的人偶：V 口里、领口封口是深色内衬（并进 belt 槽，不多一个 draw call），不是一块肉色圆盘
+  const humanHead = spec.head === 'human' || spec.head === 'weasel';
+  const pInner = humanHead ? undefined : mb.piece({ name: 'innerShirt', slot: 'belt' });
   // 躯干、脖子
-  const T = buildTorso(mb, ctx, d, g, { torso: pTorso, skin: pSkin });
+  const T = buildTorso(mb, ctx, d, g, { torso: pTorso, skin: pSkin, ...(pInner !== undefined ? { inner: pInner } : {}) });
   // 右臂 + 手，再镜像成左边
   const A = buildArm(mb, d, g, spec.sleeves === 'short' ? 'short' : 'long', T.loop, { sleeve: pSleeve, skin: pSkin, torso: pTorso });
   mb.mirror(A.v0, A.v1, A.t0, A.t1, b => MIRROR_BONE[b] ?? b);
 
   // 贴面（门襟、扣子、口袋）与领子：都按躯干表面摆
-  const surf = new TorsoSurface(mb, [pTorso, pSkin]);
+  const surf = new TorsoSurface(mb, pInner !== undefined ? [pTorso, pSkin, pInner] : [pTorso, pSkin]);
   const torsoVerts = new Set<number>();
   for (let t = 0; t < mb.triCount; t++) if (mb.triPiece[t] === pTorso) for (let k = 0; k < 3; k++) torsoVerts.add(mb.tri[t * 3 + k]!);
   const tv = [...torsoVerts];
@@ -110,7 +114,8 @@ export function buildUpper(ctx: BuildCtx): RegionResult {
 export function torsoSurface(h: HumanoidInternal, u: number, y: number): { p: THREE.Vector3; n: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3 } {
   const layout = jointLayout(h.profile, h.s);
   const seams = SEAMS(h.profile, h.s, layout);
-  const d = upperDims(h.spec, h.profile, h.s, layout, seams, garmentOf(h.spec));
+  // fix1：用人偶自己的服装款式（棉袄、中山装的布厚 pad）：配件贴的是真的衣服外表面
+  const d = upperDims(h.spec, h.profile, h.s, layout, seams, h.garment ?? garmentOf(h.spec));
   const yRoot = y + layout.bind.spine[1];
   const f = torsoFrame(d, h.profile, u * Math.PI * 2, Math.min(1, Math.max(0, hOf(d, yRoot))));
   const p = f.p.clone();

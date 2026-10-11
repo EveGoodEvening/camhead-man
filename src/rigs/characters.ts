@@ -206,7 +206,7 @@ function buildWang(o: CharacterOpts): Built {
     : {
       skin: '#C9A080', hair: '#8D8A86', hairStyle: 'bun', age: 'old', female: true, seed: 7, head: 'oldWoman',
       sculpt: { cheekFull: 0.4, chin: -0.3, lipFull: -0.5 },
-      paint: { eyeShape: 'droop', brow: 'thin', wrinkles: 0.8, spots: 0.3, blush: 0.15 },
+      paint: { eyeShape: 'droop', brow: 'thin', wrinkles: 0.75, spots: 0.12, blush: 0.18 },
     };
   const floral = floralTexture('#5B6E8C', 3);
   const h = createHumanoidInternal(spec, face, {
@@ -264,12 +264,14 @@ function buildZhou(o: CharacterOpts): Built {
   // char2：宽下巴、大鼻头、两颊略凹、眉弓高；眼角耷拉、眉毛又粗又乱（花白）、皱纹、一点胡茬
   const face: FaceOpts = {
     skin: '#A07E66', hair: '#4A4642', hairStyle: 'crop', age: 'old', seed: 1960, head: 'oldMan',
-    sculpt: { jawW: 0.5, noseW: 0.4, noseLen: 0.2, cheekFull: -0.3, browRidge: 0.4, earSize: 0.2 },
+    sculpt: { jawW: 0.6, chin: 0.1, noseW: 0.5, noseLen: 0.2, cheekFull: -0.2, browRidge: 0.4, earSize: 0.2, faceLen: -0.15 },
     paint: { eyeShape: 'droop', brow: 'bushy', wrinkles: 0.7, stubble: 0.25 },
   };
   const h = createHumanoidInternal(spec, face, {
     torsoMap: uniformShirtTexture(), shoeMap: clothShoeTexture(),
     profile: { kyphosis: 0.25 },
+    // fix1：手指弯起来握住缸把（另一只手也是半握的老人手）
+    handCurl: 2.3,
     garment: { top: 'work_shirt', collar: 'shirt', placket: 'buttons', pockets: 'chest2', tucked: true, cuffs: 'none', bottom: 'work_trousers', shoes: 'cloth' },
   });
   const s = h.s;
@@ -284,7 +286,8 @@ function buildZhou(o: CharacterOpts): Built {
   props.cap = cap;
   // 搪瓷缸：把手（缸身 +x 侧）落在掌心，缸身在手的内侧
   const mug = ACCESSORIES.mug(s);
-  mug.position.set(-0.052 * s, h.land.arm.palmCentreY - 0.004 * s, -0.022 * s);
+  // fix1：缸把落在握起来的拳心里（掌心往里 2cm、指根往下 2.5cm），缸身在指尖外面
+  mug.position.set(-0.074 * s, h.land.arm.palmCentreY - 0.026 * s, -0.012 * s);
   h.joints.elbowR.add(mug);
   h.adopt(mug);
   props.mug = mug;
@@ -303,8 +306,9 @@ function buildZhou(o: CharacterOpts): Built {
       holdArm(h, 'R', [1.3, 0, 0.35], 1.9);
     } else if (variant !== 'slump') {
       // 右手端着搪瓷缸：前臂抬平，缸子口朝上
-      holdArm(h, 'R', [0.3, 0, 0.08], 1.15);
-      mug.rotation.x = -(h.joints.shoulderR.rotation.x + h.joints.elbowR.rotation.x);
+      // fix1：胳膊肘收在身侧、缸子端在腰前（原来前臂几乎伸直往前递）
+      holdArm(h, 'R', [0.06, 0, 0.1], 1.42);
+      mug.rotation.x = -(h.joints.spine.rotation.x + h.joints.shoulderR.rotation.x + h.joints.elbowR.rotation.x);
     }
   };
   return {
@@ -390,7 +394,7 @@ function buildJunkman(): Built {
   const spec: HumanoidSpec = { height: 1.66, build: 'hunch', shirt: '#5A5850', pants: '#3E3C38', shoes: '#231f1a', skin: '#A88468', sleeves: 'long', head: 'human' };
   const face: FaceOpts = {
     skin: '#A88468', hair: '#6b665e', hairStyle: 'thin_old', age: 'old', seed: 23, head: 'oldMan',
-    sculpt: { chin: -0.2, cheekFull: -0.4 }, paint: { stubble: 0.5, wrinkles: 0.8, spots: 0.2 },
+    sculpt: { chin: -0.4, cheekFull: -0.6, jawW: -0.55, faceLen: 0.4, noseLen: 0.4, noseW: -0.2, cheekbone: 0.6 }, paint: { stubble: 0.5, wrinkles: 0.8, spots: 0.2 },
   };
   // 旧棉袄（圆领、敞着下摆）、膝盖鼓包的裤子、布鞋、一顶旧布帽
   const h = createHumanoidInternal(spec, face, {

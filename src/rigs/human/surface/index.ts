@@ -168,8 +168,10 @@ export function modeDetail(m: 'ghost' | 'replay', o: ModeDetailIn): GhostDetail 
  * 回放：衣服花色 0.85、原色 0.45、不透明度 0.75（M4 第 2 轮）。
  */
 export const MODE_TUNE = {
-  ghost: { faceMap: 1, bodyMap: 0.6, faceBase: 0.3, bodyBase: 0.36, faceSolid: 0.35, bodySolid: 0.25, rim: 0.32 },
-  replay: { faceMap: 1, bodyMap: 0.85, faceBase: 0.45, bodyBase: 0.45, faceSolid: 0.35, bodySolid: 0.25, rim: 0.22, opacity: 0.75 },
+  // fix1：魂影的脸贴图调制 1.35（> 1 = 加对比：3m 外眼、眉、嘴仍看得出，不是一个光溜溜的蛋）、脸更实 0.45；
+  // 回放的身子更实（0.25 → 0.62）、原色多留（0.45 → 0.6）：单层的壳在回放扫描线里不再化成一片雾（R2_502 年轻王桂芝）、红毛衣不再读成光身子
+  ghost: { faceMap: 1.35, bodyMap: 0.6, faceBase: 0.3, bodyBase: 0.36, faceSolid: 0.45, bodySolid: 0.25, rim: 0.32 },
+  replay: { faceMap: 1.2, bodyMap: 0.9, faceBase: 0.5, bodyBase: 0.6, faceSolid: 0.6, bodySolid: 0.62, rim: 0.22, opacity: 0.75 },
 } as const;
 
 /** 魂影颜色：style.ghost.tint 优先，其次调用方给的颜色，缺省 PALETTE.GHOST。 */

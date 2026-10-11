@@ -115,8 +115,9 @@ export function createMotion(ctx: MotionCtx): Motion {
   // 驼背：kyphosis 0.25 → 脊柱 −0.30、颈 +0.24；肩跟着往前收一点；膝微屈（老人站不直）
   const ky = Math.max(0, profile.kyphosis);
   const kyN = Math.min(1.6, ky / 0.25);
-  const hunchSpine = -1.2 * ky;
-  const hunchNeck = 0.84 * ky;
+  // fix1：弯在上背（几何里的驼峰）多、髋上那一折少：脊柱转得少一点，头靠颈往前探
+  const hunchSpine = -1.05 * ky;
+  const hunchNeck = 0.64 * ky;
   const hunchShoulder = 0.12 * ky;
   const oldKnee = old || ky >= 0.15 ? 0.08 * Math.min(1, kyN) : 0;
   const strideK = (ky > 0.1 || old ? 0.85 : 1) * (child ? 0.9 : 1);

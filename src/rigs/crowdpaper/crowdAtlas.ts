@@ -11,13 +11,20 @@ import { ARM_ROW, ARM_T, ATLAS_PX, ADULT, REG, angleOfU, bodyYofT, hairline, hea
 export interface CrowdOutfit {
   hair: string; skin: string; shirt: string; pants: string; shoes: string; sole: string;
   sleeves: 'short' | 'long'; collar: 'open' | 'band' | 'round'; pockets: 0 | 1 | 2; belt: boolean; old: boolean; placket: boolean;
+  /** fix1：脸型变体（眼宽、眉粗、眉弓、嘴宽、嘴角）：三套衣服三张不同的脸 */
+  fv?: 0 | 1 | 2;
 }
+const FACE_V = [
+  { eyeW: 0.0118, eyeY: 1.6375, brow: 1, arch: 0.003, mouthW: 0.0185, curve: 0.0011 },
+  { eyeW: 0.0106, eyeY: 1.6392, brow: 1.4, arch: 0.0012, mouthW: 0.021, curve: 0.0003 },
+  { eyeW: 0.0126, eyeY: 1.6362, brow: 0.8, arch: 0.0042, mouthW: 0.0165, curve: 0.0019 },
+] as const;
 
 /** 三套八九十年代街坊的衣服（与旧版同样的头发 / 上衣 / 裤子颜色）。 */
 export const CROWD_OUTFITS: readonly CrowdOutfit[] = [
-  { hair: '#15120f', skin: '#C9A080', shirt: '#E4E0D4', pants: '#34405E', shoes: '#1d1a18', sole: '#cdc6b6', sleeves: 'short', collar: 'open', pockets: 1, belt: true, old: false, placket: true },
-  { hair: '#1c1714', skin: '#C39878', shirt: '#4E6386', pants: '#2B2C31', shoes: '#2c2119', sole: '#3a3430', sleeves: 'long', collar: 'band', pockets: 2, belt: false, old: false, placket: true },
-  { hair: '#8a8680', skin: '#C09A7E', shirt: '#8A3B32', pants: '#4A4238', shoes: '#1d1a18', sole: '#cdc6b6', sleeves: 'long', collar: 'round', pockets: 0, belt: false, old: true, placket: true },
+  { hair: '#15120f', skin: '#C9A080', shirt: '#E4E0D4', pants: '#34405E', shoes: '#1d1a18', sole: '#cdc6b6', sleeves: 'short', collar: 'open', pockets: 1, belt: true, old: false, placket: true, fv: 0 },
+  { hair: '#1c1714', skin: '#C39878', shirt: '#4E6386', pants: '#2B2C31', shoes: '#2c2119', sole: '#3a3430', sleeves: 'long', collar: 'band', pockets: 2, belt: false, old: false, placket: true, fv: 1 },
+  { hair: '#8a8680', skin: '#C09A7E', shirt: '#8A3B32', pants: '#4A4238', shoes: '#1d1a18', sole: '#cdc6b6', sleeves: 'long', collar: 'round', pockets: 0, belt: false, old: true, placket: true, fv: 2 },
 ];
 
 type RGB = [number, number, number];
@@ -49,6 +56,7 @@ function paintBody(o: CrowdOutfit, s: number, t: number): RGB {
   const weave = 1 + 0.035 * vnoise(s * 180, t * 160) + 0.02 * hash2(s * 999, t * 777);
 
   // ---- 领口以上：皮肤 / 头
+  const fvv = FACE_V[o.fv ?? 0];
   const front = Math.max(0, sn);
   let collarY: number;
   if (o.collar === 'open') collarY = 1.474 - 0.058 * Math.pow(front, 10);
@@ -73,10 +81,10 @@ function paintBody(o: CrowdOutfit, s: number, t: number): RGB {
           if (dn < 1.4) c = mix(c, [70, 40, 32], 0.75 * smoothstep(1.4, 0.6, dn));
         }
         // 嘴：上唇、下唇、唇缝
-        const mw = 0.0185;
+        const mw = fvv.mouthW;
         const mx = hx / mw;
         if (Math.abs(mx) < 1.15) {
-          const curve = 0.0011 * mx * mx;
+          const curve = fvv.curve * mx * mx;
           const lineY = 1.5755 + curve;
           const e = smoothstep(1.15, 0.85, Math.abs(mx));
           const up = y - lineY;
@@ -99,8 +107,8 @@ function paintBody(o: CrowdOutfit, s: number, t: number): RGB {
       // 眼：杏核眼、深色虹膜、上眼线（只画正脸）
       if (front > 0.6) {
         for (const sx of [-1, 1]) {
-          const ex = sx * 0.0315, ey = 1.6375;
-          const dx = (hx - ex) / 0.0118;
+          const ex = sx * 0.0315, ey = fvv.eyeY;
+          const dx = (hx - ex) / fvv.eyeW;
           if (Math.abs(dx) < 1.1) {
             const lid = Math.max(0, 1 - dx * dx);
             const dy = (y - ey) / 0.0048;
@@ -123,8 +131,8 @@ function paintBody(o: CrowdOutfit, s: number, t: number): RGB {
           const bx = Math.abs(hx), side = Math.sign(hx) === sx;
           if (side && bx > 0.012 && bx < 0.051) {
             const k = (bx - 0.012) / 0.039;
-            const by = 1.6505 + 0.003 * Math.sin(Math.PI * Math.min(1, k * 1.25)) - 0.0012 * k;
-            const th2 = lerp(0.0021, 0.0011, k) * (o.old ? 1.2 : 1);
+            const by = 1.6505 + fvv.arch * Math.sin(Math.PI * Math.min(1, k * 1.25)) - 0.0012 * k;
+            const th2 = lerp(0.0021, 0.0011, k) * (o.old ? 1.2 : 1) * fvv.brow;
             const dd = Math.abs(y - by);
             if (dd < th2) c = mix(c, o.old ? [120, 116, 110] : mul(hair, 0.9), 0.85 * smoothstep(th2, th2 * 0.4, dd));
           }

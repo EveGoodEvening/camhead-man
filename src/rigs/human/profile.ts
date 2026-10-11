@@ -73,13 +73,13 @@ export function profileOf(spec: Readonly<HumanoidSpec>, face?: Readonly<FaceOpts
   const f = sex === 'f' && !child;
   return {
     sex, age, build, deity,
-    headScale: o.headScale ?? (child ? 1.3 : deity ? 1.25 : 1),
+    headScale: o.headScale ?? (child ? CHILD_HEAD_SCALE : deity ? DEITY_HEAD_SCALE : 1),
     bw: o.bw ?? b.w, bd: o.bd ?? b.d, belly: o.belly ?? b.belly,
     bust: o.bust ?? (f ? 1 : 0),
     waistTaper: o.waistTaper ?? (f ? 0.88 : 1),
     hipW: o.hipW ?? (f ? 1.08 : 1),
     kyphosis: o.kyphosis ?? (build === 'hunch' ? 0.21 : age === 'old' ? 0.05 : 0),
-    legScale: o.legScale ?? (child ? 0.88 / 0.95 : deity ? 0.84 / 0.95 : 1),
+    legScale: o.legScale ?? (child ? 0.82 / 0.95 : deity ? 0.84 / 0.95 : 1),
   };
 }
 
@@ -104,6 +104,13 @@ export function garmentOf(spec: Readonly<HumanoidSpec>, style?: Readonly<Humanoi
 // ---------------------------------------------------------------- 关节布局
 
 const v3 = (x: number, y: number, z: number): V3 => [x, y, z];
+/** fix1：儿童 headSlot 相对 neck 关节往下（×s）。 */
+export const CHILD_HEAD_DROP = -0.025;
+/** fix1：儿童头的放大倍数。 */
+export const CHILD_HEAD_SCALE = 1.38;
+/** fix1：土地的 neck 关节高（×s）与头的放大倍数。 */
+export const DEITY_NECK = 0.33;
+export const DEITY_HEAD_SCALE = 1.5;
 
 /**
  * 关节的局部位置（×s）。成年人与老人（以及 legacy = true 的任何体型）：正是旧版的数值（WP0 自测 char2.layout 逐项核对）——
@@ -120,21 +127,25 @@ export function jointLayout(p: Readonly<BodyProfile>, s: number, o?: { legacy?: 
   const drop = p.build === 'hunch' ? 0.02 * s : 0;
   let L: Record<BuildJoint, V3>;
   if (child) {
+    // fix1：孩子要 5.3–5.6 头身（原来 hips 0.88s、头 ×1.3、脖子随头放大变长 → 6.3 头身的缩小版大人）：
+    // 腿短（hips 0.82s）、头 ×1.38、headSlot 比领口低 0.025s（NECK_TOP 按 headScale 放大后脖子不再细长）、胳膊相应短一点
     L = {
-      hips: v3(0, 0.88 * s, 0), spine: v3(0, 0.1 * s, 0), neck: v3(0, 0.455 * s, 0), headSlot: v3(0, 0, 0),
-      shoulderL: v3(-0.17 * s, 0.36 * s, 0), shoulderR: v3(0.17 * s, 0.36 * s, 0),
-      elbowL: v3(0, -0.27 * s, 0), elbowR: v3(0, -0.27 * s, 0), wristL: v3(0, -0.225 * s, 0), wristR: v3(0, -0.225 * s, 0),
+      hips: v3(0, 0.82 * s, 0), spine: v3(0, 0.1 * s, 0), neck: v3(0, 0.44 * s, 0), headSlot: v3(0, CHILD_HEAD_DROP * s, 0),
+      shoulderL: v3(-0.17 * s, 0.355 * s, 0), shoulderR: v3(0.17 * s, 0.355 * s, 0),
+      elbowL: v3(0, -0.255 * s, 0), elbowR: v3(0, -0.255 * s, 0), wristL: v3(0, -0.215 * s, 0), wristR: v3(0, -0.215 * s, 0),
       hipL: v3(-0.085 * s, -0.03 * s, 0), hipR: v3(0.085 * s, -0.03 * s, 0),
-      kneeL: v3(0, -0.4 * s, 0), kneeR: v3(0, -0.4 * s, 0), ankleL: v3(0, -0.38 * s, 0), ankleR: v3(0, -0.38 * s, 0),
+      kneeL: v3(0, -0.37 * s, 0), kneeR: v3(0, -0.37 * s, 0), ankleL: v3(0, -0.345 * s, 0), ankleR: v3(0, -0.345 * s, 0),
     };
   } else {
-    const hipsY = deity ? 0.84 : 0.95, neckY = deity ? 0.4 : 0.45, shY = deity ? 0.378 * 0.4 / 0.45 : 0.378;
+    // fix1：土地 ≈5 头身（大圆头 ×1.5、短身子；腿长不变 → 坐马扎的高度不变）：spine 0.08s、neck 0.33s、headSlot -0.02s、胳膊短一点
+    const hipsY = deity ? 0.84 : 0.95, neckY = deity ? DEITY_NECK : 0.45, shY = deity ? 0.378 * DEITY_NECK / 0.45 : 0.378;
     const knee = deity ? -0.37 : -0.43, ankle = deity ? -0.365 : -0.415;
     const shX = 0.195 * s * bw, hipX = 0.095 * s * bw;
+    const elb = deity ? -0.25 : -0.29, wri = deity ? -0.21 : -0.245;
     L = {
-      hips: v3(0, hipsY * s, 0), spine: v3(0, 0.1 * s, 0), neck: v3(0, neckY * s, 0), headSlot: v3(0, 0, 0),
+      hips: v3(0, hipsY * s, 0), spine: v3(0, (deity ? 0.08 : 0.1) * s, 0), neck: v3(0, neckY * s, 0), headSlot: v3(0, deity ? -0.02 * s : 0, 0),
       shoulderL: v3(-shX, shY * s - drop, 0), shoulderR: v3(shX, shY * s - drop, 0),
-      elbowL: v3(0, -0.29 * s, 0), elbowR: v3(0, -0.29 * s, 0), wristL: v3(0, -0.245 * s, 0), wristR: v3(0, -0.245 * s, 0),
+      elbowL: v3(0, elb * s, 0), elbowR: v3(0, elb * s, 0), wristL: v3(0, wri * s, 0), wristR: v3(0, wri * s, 0),
       hipL: v3(-hipX, -0.03 * s, 0), hipR: v3(hipX, -0.03 * s, 0),
       kneeL: v3(0, knee * s, 0), kneeR: v3(0, knee * s, 0), ankleL: v3(0, ankle * s, 0), ankleR: v3(0, ankle * s, 0),
     };
@@ -156,7 +167,8 @@ export function landmarksOf(p: Readonly<BodyProfile>, s: number, face?: Readonly
   const k = s * p.headScale;
   const P = (x: number, y: number, z: number): V3 => [x * k, y * k, z * k];
   const hairTopBy = {
-    crop: 0.262 * k, side_part: 0.266 * k, thin_old: 0.256 * k, bald: 0.252 * k, flat_top: 0.272 * k, bun: 0.262 * k, long: 0.262 * k,
+    // fix1：头发加厚（WP-H 发型）后量出来的头顶
+    crop: 0.267 * k, side_part: 0.271 * k, thin_old: 0.256 * k, bald: 0.252 * k, flat_top: 0.272 * k, bun: 0.283 * k, long: 0.263 * k,
     child_bowl: 0.27 * k, none: 0.252 * k,
   } as const;
   const child = p.age === 'child';
@@ -171,7 +183,9 @@ export function landmarksOf(p: Readonly<BodyProfile>, s: number, face?: Readonly
       eyeL: P(-0.032, 0.15, -0.093), eyeR: P(0.032, 0.15, -0.093), browY: 0.17 * k, noseTip: P(0, 0.112, -0.122), noseBaseY: 0.105 * k,
       mouth: P(0, 0.08, -0.098), earL: P(-0.078, 0.135, 0.006), earR: P(0.078, 0.135, 0.006), earHeight: 0.06 * k,
       hairTop: hairTopBy[normHair(face?.hairStyle ?? 'short')], hairTopBy,
-      bunCentre: P(0, 0.175, 0.105), bunR: 0.042 * k, capSeatY: 0.232 * k,
+      // fix1：发髻大了、盘高了（低髻 'long' 在后颈上方）
+      bunCentre: normHair(face?.hairStyle ?? 'short') === 'long' ? P(0, 0.122, 0.103) : P(0, 0.232, 0.074),
+      bunR: (normHair(face?.hairStyle ?? 'short') === 'long' ? 0.05 : 0.058) * k, capSeatY: 0.232 * k,
       glassesBridge: P(0, 0.145, -0.106), anchorMouth: P(0, 0.075, -0.1), anchorHead: P(0, 0.14, 0),
     },
     torso: {
@@ -222,7 +236,8 @@ export function SEAMS(p: Readonly<BodyProfile>, s: number, layout?: Readonly<Joi
   const hb = lay.bind.headSlot;
   const nc: V3 = [hb[0], hb[1] + 0.07 * nk, hb[2] + 0.01 * nk];
   let na = 0.052 * nk, nb = 0.043 * nk;
-  if (female) { na *= 0.88; nb *= 0.9; }
+  // fix1：女人的脖子不再细得像一根棍（×0.88/0.90 → ×0.93/0.95）
+  if (female) { na *= 0.93; nb *= 0.95; }
   if (child) { na *= 0.85; nb *= 0.85; }
   const N = 20;
   const npos = new Float32Array(N * 3), nnor = new Float32Array(N * 3);

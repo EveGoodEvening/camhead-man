@@ -344,6 +344,11 @@ registerSelftest('char2.lower_robe', () => {
     c.update(0.016, 0);
     c.root.updateMatrixWorld(true);
     const P = skinned(rb), idx = idxOf(g);
+    // fix1：土地的酒桶肚（布腰带、袍子上身）在坐下时盖住大腿根：这几层也算“盖住”（只要大腿不从衣服外面露出来）
+    const covers: [Float32Array, ArrayLike<number>][] = [[P, idx]];
+    c.root.traverse(o => {
+      if ((o.name === 'belt' || o.name === 'torso') && (o as THREE.SkinnedMesh).isSkinnedMesh && o.visible) covers.push([skinned(o as THREE.SkinnedMesh), idxOf((o as THREE.Mesh).geometry)]);
+    });
     const s = c.height / 1.75;
     let covered = 0, total = 0;
     const miss: string[] = [];
@@ -360,7 +365,7 @@ registerSelftest('char2.lower_robe', () => {
         if (f === 1) dirs.push(axis.clone());
         for (const d of dirs) {
           total++;
-          if (rayHits(P, idx, o.clone().addScaledVector(d, rt), d, 0.5).length >= 1) covered++;
+          if (covers.some(([PP, ii]) => rayHits(PP, ii, o.clone().addScaledVector(d, rt), d, 0.5).length >= 1)) covered++;
           else miss.push(`${side}${f}/${d.toArray().map(v => v.toFixed(1)).join(',')}`);
         }
       }

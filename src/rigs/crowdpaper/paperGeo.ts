@@ -321,10 +321,11 @@ export function melonCap(mb: MeshBuilder, k: number, y0: number, a: number, b: n
 }
 
 /** 一圈立领（领口往里翻边到脖子）。 */
-export function collarBand(mb: MeshBuilder, y0: number, y1: number, a0: number, b0: number, a1: number, b1: number, cz: number, rect: UvRect, group: number): void {
+export function collarBand(mb: MeshBuilder, y0: number, y1: number, a0: number, b0: number, a1: number, b1: number, cz: number, rect: UvRect, group: number, inner = 0.66): void {
   const seg = 16;
+  // fix1：领口往里翻的那一圈一直收到脖子上（原来只收到 78%，领子上面一圈空口、看得见里面的亮边）
   const rows = [
-    { y: y0, a: a0, b: b0 }, { y: y1, a: a1, b: b1 }, { y: y1 + 0.002, a: a1 * 0.78, b: b1 * 0.78 },
+    { y: y0, a: a0, b: b0 }, { y: y1, a: a1, b: b1 }, { y: y1 - 0.001, a: a1 * inner, b: b1 * inner },
   ];
   const rings = rows.map((r, j) => {
     const ring: number[] = [];

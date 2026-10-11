@@ -1076,6 +1076,8 @@ export class PlayerController {
 
 所有角色都由基础几何体拼成，**不做骨骼蒙皮**。关节是嵌套的 `Group`，动画只转关节。
 
+> **char2 补写（2026-10）**：上一句只对纸人、人群、配件仍成立。程序化人身（`createHumanoid*`，含主角身子、所有具名 NPC、回放人影）已改为**一张连续蒙皮的身子 + 一个刚体头**，见 §5.1 末尾“char2 补写”。关节仍是嵌套 `Group`、外部代码仍只写关节旋转，骨头跟着关节走。
+
 ### 5.1 程序化人身（`rigs/humanoid.ts`、`rigs/poses.ts`）
 
 ```ts
@@ -1112,6 +1114,18 @@ export function createHumanoid(spec: HumanoidSpec): HumanoidRig;
 - **draw call 成本（2026-10-06 更新）**：按关节保留网格，同一关节同材质的细节合并；头部五官、手指和胡须纹理不各自拆成 draw call。五张 look-dev 的主场景最高 203/250；实景群像 `shot.r1.old1_replay` 为 52 次主场景绘制、121236 个整帧三角面。镜面与 CH2 会重复绘制角色，人多的场景仍优先用 `rigs/crowd.ts`/纸人、远处用剪影；不要通过拆分细节网格提高精度。
 - `root.userData.fadeCapable = true`（M1d）：`setOpacity(< 1)` 会把非着色器材质切成 `transparent`（r186 的程序按 opaque 区分），`warmupArea` 据此把这些材质的透明变体也预热一遍（§8.5），P14 与 NPC `fadeTo` 的第一帧不现场编译。
 - `dispose()`（M3 补写，docs/requests/r4.md #5）：释放子树里 `Mesh`、`Line`、`Points` 的非缓存几何；线/点的材质不在人偶自己的 owned 列表里，非共享的也在这里释放（黄鼬头的胡须 `LineSegments` 原来每建一次漏一份）。
+
+- **char2 补写（2026-10，人物精修；计划与验收见 `test-artifacts/work/char2/PLAN.md`）**——上面“人物细化（2026-10-06）”“draw call 成本”两条里的“不用骨骼蒙皮、按关节保留网格”已被取代：
+  - **模块**：`rigs/humanoid.ts` 只是门面（对外名字不变）；实现在 `rigs/human/`：`types.ts`（`HumanoidStyle.garment: GarmentSpec`、`profile`、`FaceOpts.head/sculpt/paint`）、`shared.ts`（loft/环/蒙皮/焊法线工具、`checkRingMatch`、`bakeSkinned`）、`profile.ts`（`BodyProfile`、`jointLayout`、`BONES`、`SEAMS`、`Landmarks`）、`assemble.ts`（装配）四个冻结文件，加区域构建器 `head/`（头、脸贴图、发型、黄鼬头、`headShell`）、`upper/`（颈到腰、手臂、手、上衣、领、口袋）、`lower/`（裤、腰带/腰封、鞋、袍/旗袍及坐姿垂褶）、`surface/`（材质、布纹、魂影/回放参数）、`motion/`（步态、驼背、呼吸、手腕脚踝）；外衣贴图在 `rigs/outfit/textures.ts`，配件拟合工具在 `rigs/cast/geo.ts`（`HeadFit` 按真实头网格贴合帽子、眼镜、胡子、安全帽）。
+  - **身子**：颈以下是若干 `SkinnedMesh`（按材质槽合并：`torso`/`sleeves`/`skin`/`pants`/`shoes`/`belt`/`robe`，衣领 `collar` 单独一个），共用一套 `Skeleton`；骨头 `bone.<关节>` 是关节 `Group` 的单位子节点，`bind()` 用单位 `bindMatrix`，逆矩阵 = 关节绑定位置的平移取反。新增内部关节 `wristL/R`（肘下 0.245s）、`ankleL/R`（膝下 0.415s），在 `HumanoidInternal.extraJoints`，不进公开 `JointName`。合并后所有槽之间按位置（0.2 mm）焊接法线，接缝看不见。
+  - **头**仍是 `headSlot` 下唯一叫 `head` 的刚体网格（地图 = 脸贴图，魂影材质带 `uHasMap`）；头发就是头的外壳（发下没有头骨），发髻是头网格的一部分、取角色发色；底边与颈部蒙皮的顶环完全重合（接缝 `NECK_TOP`，100% 权重给 `headSlot`）。上衣与裤/袍在 `WAIST` 接缝相接。两条接缝的点数、顺序、法线由 `SEAMS(profile, s)` 给出，两边都必须逐点对上（`checkRingMatch`：误差 ≤ 0.1 mm，法线点积 > 0.999）。
+  - **体型**：成人/老人的关节局部坐标与旧版完全相同（领口 1.50s、坐姿 `bodyDrop` 0.45s、手掌中心在肘下 0.30s）；儿童（头 ×1.38，约 5.5 头身）与土地（头 ×1.5，约 5 头身）用 `jointLayout` 的专用布局，`bodyDrop` 按腿长缩放。驼背由 `profile.kyphosis` 同时决定躯干外形与 `motion` 的姿势。
+  - **射线 / 包围盒 / 剔除**：蒙皮槽网格不在 CPU 上蒙皮：`raycast` 换成按骨头胶囊求交（半径来自顶点离轴距离），`bounds()` 用同一组胶囊 + 刚体部件 + 配件（尊重 `noBounds`），视锥剔除用以 hips 为心、按骨链长度放大的保守球。合并网格里两条胳膊/腿在同一个网格内——测试射线要限 `far`。
+  - **无内层几何**：魂影/回放按近到远写深度，外壳里面的东西都会透出来：袖子下没有胳膊、衬衫下没有皮肤、袍子里站立时没有腿、发下没有头骨。贴在面上的薄层（口袋、门襟、扣子、袖口）放在所属网格索引缓冲的合适位置，衣领在魂影/回放下多一个深度预通道 `collarPrepass`（+1 call）挡住领内的脖子。
+  - **材质规则不变**：身体只用 `MeshStandardMaterial` 的 `map × color + uv`（不加法线图、顶点色、第二套 UV、新 `onBeforeCompile`）；形状细节全是几何。脸贴图仍 ≤ 512×384 且按选项缓存，布纹 3 × 256²，`shot.r1.fin_booth_lu` 画布 62.187 MiB 不变（净零）。
+  - **预算**（`scripts/charstats.mjs --json`）：普通人 7–10 个网格、12.5–15k 三角；周 11 / 16.3k，陆 10 / 16.1k，王 10 / 14.6k，土地 12 / 17.7k，黄三爷 9–10 / ≤ 15.8k；主角身子 10 个网格 / 10.9k；人群单人 3.4k（儿童是第二份几何 `crowd.kids`，回放 ≤ 3+1 个 InstancedMesh）；纸人摊主 2.4k、门童 2.3k。
+  - **释放**：区域卸载只走 `Disposer.trackObject`，所以槽网格几何（缓存几何时为槽材质）的 `dispose` 事件顺带释放 `Skeleton.boneTexture`；`roundtrip.mjs` 是回归测试。
+  - **测试**：`scripts/selftest/char2.mjs`（`core.mjs` 会发现它）覆盖接缝、地标、无内层射线、手、坐高、袍摆、程序数、配件贴合；`scripts/charshots.mjs` 对构建好的 dist 拍人物图（与 `test-artifacts/work/char2/before/` 同名），`char2.spawn` 页面自测可在 dev 区域摆任何角色。
 
 ### 5.2 主角（`rigs/cameraHead.ts`、`rigs/player.ts`）
 
